@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, nativeImage } = require('electron');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -14,7 +15,11 @@ const BACKGROUND = process.argv.includes('--background'); // 开机自启时带�
 let win;
 let tray;
 let expandedHeight = null;
-let claudeWasRunning = false;
+let lastWant = false; // 上一次判断浮窗该不该出现
+let claudeWindowOpen = true; // 没收到窗口状态之前先当 Claude 窗口开着
+let windowWatcher = null;
+let sending = false;
+let quitting = false;
 
 function statePath() {
   return path.join(app.getPath('userData'), 'window-state.json');
@@ -58,16 +63,38 @@ function claudeRunning() {
   }
 }
 
-// 只在 Claude 开/关的那一刻动窗口，中间你手动显示/隐藏都算数
+// 常驻的 PowerShell 小进程，Claude 窗口开着/最小化（或关到托盘）变化时打印 open / closed
+function watchClaudeWindow() {
+  if (process.env.CLAUDE_FLOAT_WINDOW) { claudeWindowOpen = process.env.CLAUDE_FLOAT_WINDOW === 'open'; return; } // 调试
+  windowWatcher = spawn('powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'claude-window.ps1')],
+    { windowsHide: true });
+  let buf = '';
+  windowWatcher.stdout.on('data', (d) => {
+    buf += d;
+    const lines = buf.split(/\r?\n/);
+    buf = lines.pop();
+    for (const line of lines) {
+      if (line === 'open' || line === 'closed') { claudeWindowOpen = line === 'open'; followClaude(); }
+    }
+  });
+  windowWatcher.on('exit', () => { windowWatcher = null; if (!quitting) setTimeout(watchClaudeWindow, 3000); });
+}
+
+// 浮窗是 Claude 主窗口的替身：Claude 在跑但窗口最小化/关到托盘时出现，窗口开着或 Claude 退出时隐藏
+const wantFloat = () => claudeRunning() && !claudeWindowOpen;
+
+// 只在该出现/该隐藏的那一刻动窗口，中间你手动显示/隐藏都算数；快速回复时 Claude 会闪到前台，这期间不跟
 function followClaude() {
-  const running = claudeRunning();
-  if (prefs().follow && running !== claudeWasRunning && win && !win.isDestroyed()) {
-    if (running) win.showInactive();
+  if (!win || win.isDestroyed() || sending) return;
+  const want = wantFloat();
+  if (prefs().follow && want !== lastWant) {
+    if (want) win.showInactive();
     else win.hide();
     refreshTray();
   }
-  claudeWasRunning = running;
-  if (process.env.CLAUDE_FLOAT_DEBUG) console.log('FOLLOW', JSON.stringify({ t: Math.round(process.uptime()), running, visible: win.isVisible() }));
+  lastWant = want;
+  if (process.env.CLAUDE_FLOAT_DEBUG) console.log('FOLLOW', JSON.stringify({ t: Math.round(process.uptime()), want, visible: win.isVisible() }));
 }
 
 function onSomeDisplay(s) {
@@ -105,9 +132,9 @@ function createWindow() {
   win.setAlwaysOnTop(s.pinned !== false, 'screen-saver');
   win.loadFile('index.html');
   win.once('ready-to-show', () => {
-    claudeWasRunning = claudeRunning();
-    // 开机自启时只在 Claude 开着才露面；手动打开总是显示
-    if (!BACKGROUND || claudeWasRunning) win.showInactive();
+    lastWant = wantFloat();
+    // 开机自启时按 Claude 的状态决定；手动打开总是显示
+    if (!BACKGROUND || lastWant) win.showInactive();
     refreshTray();
   });
   win.on('moved', saveBounds);
@@ -151,7 +178,7 @@ function refreshTray() {
     { label: win.isVisible() ? '隐藏浮窗' : '显示浮窗', click: toggleWindow },
     { type: 'separator' },
     {
-      label: '跟随 Claude 桌面版自动显示/隐藏', type: 'checkbox', checked: p.follow,
+      label: '跟随 Claude：主窗口开着时隐藏，最小化时显示', type: 'checkbox', checked: p.follow,
       click: (item) => { patchState({ follow: item.checked }); refreshTray(); },
     },
     {
@@ -197,9 +224,15 @@ async function sendTo(id, text, dryRun = false) {
   if (!s) return { ok: false, message: '找不到这个会话' };
   const hwnd = win.getNativeWindowHandle();
   const prevHwnd = hwnd.length >= 8 ? hwnd.readBigUInt64LE(0) : hwnd.readUInt32LE(0);
-  const res = await reply.send({ localId: s.localId, title: s.title, text, file: s.file, prevHwnd, dryRun });
-  if (!win.isDestroyed()) win.showInactive();
-  return res;
+  // Claude 原本是最小化/在托盘里的，发完再把它收起来，浮窗就还留着
+  const minimizeAfter = !claudeWindowOpen;
+  sending = true;
+  try {
+    return await reply.send({ localId: s.localId, title: s.title, text, file: s.file, prevHwnd, minimizeAfter, dryRun });
+  } finally {
+    if (!win.isDestroyed()) win.showInactive();
+    setTimeout(() => { sending = false; lastWant = wantFloat(); }, 1500); // 等窗口状态稳定，别把浮窗藏掉
+  }
 }
 ipcMain.handle('sessions:send', (_e, { id, text }) => sendTo(id, text));
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);
@@ -233,7 +266,9 @@ if (!app.requestSingleInstanceLock()) {
     if (prefs().autostart) applyAutostart(true); // 刷新一下启动路径，项目挪过位置也不怕
     createWindow();
     createTray();
+    watchClaudeWindow();
     setInterval(followClaude, 2000);
   });
+  app.on('before-quit', () => { quitting = true; if (windowWatcher) windowWatcher.kill(); });
   app.on('window-all-closed', () => app.quit());
 }

@@ -65,7 +65,7 @@ async function waitInTranscript(file, text, sinceSize, timeoutMs = 10000) {
   return false;
 }
 
-async function send({ localId, title, text, file, prevHwnd, dryRun = false }) {
+async function send({ localId, title, text, file, prevHwnd, minimizeAfter = false, dryRun = false }) {
   text = String(text || '').trim();
   if (!text) return { ok: false, message: '内容是空的' };
   if (!LOCAL_ID.test(localId || '')) return { ok: false, message: '只能回复 Claude 桌面版里的会话' };
@@ -78,6 +78,7 @@ async function send({ localId, title, text, file, prevHwnd, dryRun = false }) {
   await shell.openExternal(`claude://code/continue?session=${localId}`);
   const args = ['-TitleB64', Buffer.from(title || '', 'utf8').toString('base64'), '-PrevHwnd', String(prevHwnd || 0)];
   if (dryRun) args.push('-DryRun');
+  if (minimizeAfter) args.push('-MinimizeAfter');
   const res = await runScript(args);
 
   if (!res.ok) {

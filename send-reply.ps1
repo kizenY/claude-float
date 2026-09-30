@@ -5,7 +5,8 @@ param(
   [string]$TitleB64 = '',
   [long]$PrevHwnd = 0,
   [int]$WaitMs = 6000,
-  [switch]$DryRun
+  [switch]$DryRun,
+  [switch]$MinimizeAfter # Claude was minimized / in the tray before we popped it up
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -42,7 +43,9 @@ public static class W {
 }
 "@
 
+$hwnd = [IntPtr]::Zero
 function Done($obj) {
+  if ($MinimizeAfter -and $hwnd -ne [IntPtr]::Zero) { [W]::ShowWindow($hwnd, 7) | Out-Null } # SW_SHOWMINNOACTIVE
   if ($PrevHwnd -ne 0) { [W]::Activate([IntPtr]$PrevHwnd) | Out-Null }
   $obj | ConvertTo-Json -Compress
   exit 0
