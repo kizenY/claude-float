@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; media-src blob:">
 <title>Claude 播报</title>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -13,6 +13,7 @@
       <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l1.6 6.1 5.9-2.4-4.3 4.8 5.3 3.4-6.3.3.9 6.3L12 15.6 8.9 21l.9-6.3-6.3-.3 5.3-3.4-4.3-4.8 5.9 2.4z"/></svg>
       <span>Claude 播报</span>
       <span id="speaking-dot" class="speaking-dot" hidden></span>
+      <span id="status" class="status"></span>
     </div>
     <div class="actions">
       <button id="btn-stop" class="icon" title="停止朗读 (Esc)" hidden>

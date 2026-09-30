@@ -37,13 +37,14 @@
     return lines.join('\n');
   }
 
-  // Chromium 的 speechSynthesis 读长句容易中途断掉，切成 ~160 字的段
-  function chunk(text, max = 160) {
+  // 按句子切段。系统语音读长句容易中途断掉，默认 ~160 字；firstMax 让第一段更短、更快出声
+  function chunk(text, max = 160, firstMax = max) {
     const pieces = String(text).split(/(?<=[。！？!?；;\n])/);
     const out = [];
     let buf = '';
     for (const p of pieces) {
-      if ((buf + p).length > max && buf) {
+      const limit = out.length ? max : firstMax;
+      if ((buf + p).length > limit && buf) {
         out.push(buf.trim());
         buf = '';
       }

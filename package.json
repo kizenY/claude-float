@@ -10,5 +10,9 @@
   },
   "devDependencies": {
     "electron": "^39.2.7"
+  },
+  "dependencies": {
+    "https-proxy-agent": "^9.1.0",
+    "ws": "^8.22.0"
   }
 }

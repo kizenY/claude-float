@@ -3,8 +3,11 @@ const listEl = $('list');
 const synth = window.speechSynthesis;
 
 const settings = (() => {
-  try { return { rate: 1.2, voiceURI: '', ...JSON.parse(localStorage.getItem('settings') || '{}') }; }
-  catch { return { rate: 1.2, voiceURI: '' }; }
+  const defaults = { rate: 1.1, voice: 'edge:zh-CN-XiaoxiaoNeural' };
+  try {
+    const saved = JSON.parse(localStorage.getItem('settings') || '{}');
+    return { ...defaults, rate: saved.rate || defaults.rate, voice: saved.voice || defaults.voice };
+  } catch { return defaults; }
 })();
 function saveSettings() {
   try { localStorage.setItem('settings', JSON.stringify(settings)); } catch { /* 忽略 */ }
@@ -68,9 +71,13 @@ async function refresh() {
   }
 }
 
-function pickVoice() {
+// settings.voice: "edge:<神经语音 id>" 或 "sys:<系统语音 voiceURI>"
+let edgeVoices = [];
+let currentAudio = null;
+
+function sysVoice(uri) {
   const voices = synth.getVoices();
-  return voices.find((v) => v.voiceURI === settings.voiceURI)
+  return voices.find((v) => v.voiceURI === uri)
     || voices.find((v) => /^zh[-_]CN/i.test(v.lang))
     || voices.find((v) => /^zh/i.test(v.lang))
     || voices[0];
@@ -83,10 +90,84 @@ function setSpeaking(id) {
   render();
 }
 
+let statusTimer;
+function flash(msg) {
+  $('status').textContent = msg;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { $('status').textContent = ''; }, 6000);
+}
+
 function stop() {
   speakToken++;
   synth.cancel();
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.onended && currentAudio.onended();
+    currentAudio = null;
+  }
   setSpeaking(null);
+}
+
+function playMp3(bytes) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+    const a = new Audio(url);
+    const finish = (err) => {
+      a.onended = a.onerror = null;
+      URL.revokeObjectURL(url);
+      if (currentAudio === a) currentAudio = null;
+      err ? reject(err) : resolve();
+    };
+    a.onended = () => finish();
+    a.onerror = () => finish(new Error('audio playback failed: ' + (a.error ? a.error.code + ' ' + a.error.message : '?') + ' bytes=' + bytes.length));
+    currentAudio = a;
+    a.play().catch(finish);
+  });
+}
+
+function speakSystem(chunks, token) {
+  return new Promise((resolve) => {
+    if (!chunks.length) return resolve();
+    const voice = sysVoice(settings.voice.startsWith('sys:') ? settings.voice.slice(4) : '');
+    chunks.forEach((c, i) => {
+      const u = new SpeechSynthesisUtterance(c);
+      if (voice) { u.voice = voice; u.lang = voice.lang; }
+      u.rate = settings.rate;
+      const last = i === chunks.length - 1;
+      u.onend = () => { if (last) resolve(); };
+      u.onerror = (ev) => {
+        if (ev.error !== 'canceled' && ev.error !== 'interrupted') console.error('tts', ev.error);
+        if (last) resolve();
+      };
+      if (token === speakToken) synth.speak(u);
+    });
+  });
+}
+
+// 边播边合成：当前段播放时，后面两段已经在请求
+async function speakEdge(chunks, voice, token) {
+  const pending = [];
+  const fetchAt = (i) => {
+    if (i >= chunks.length || pending[i]) return;
+    pending[i] = window.api.synthesize(chunks[i], { voice, rate: settings.rate });
+    pending[i].catch(() => {}); // 停止后没人等的请求别报未处理
+  };
+  fetchAt(0); fetchAt(1);
+  for (let i = 0; i < chunks.length; i++) {
+    let bytes;
+    try {
+      bytes = await pending[i];
+    } catch (e) {
+      console.error('edge-tts', e);
+      if (token !== speakToken) return;
+      flash('在线语音连不上，改用系统语音');
+      return speakSystem(chunks.slice(i), token);
+    }
+    if (token !== speakToken) return;
+    fetchAt(i + 2);
+    await playMp3(bytes).catch((e) => console.error(e));
+    if (token !== speakToken) return;
+  }
 }
 
 async function toggleSpeak(s) {
@@ -103,39 +184,45 @@ async function toggleSpeak(s) {
     text = '读取会话失败。';
   }
   if (token !== speakToken) return;
+  text = text || '这条会话还没有文字回复。';
 
-  const chunks = window.SpeechText.chunk(text || '这条会话还没有文字回复。');
-  const voice = pickVoice();
-  chunks.forEach((c, i) => {
-    const u = new SpeechSynthesisUtterance(c);
-    if (voice) { u.voice = voice; u.lang = voice.lang; }
-    u.rate = settings.rate;
-    if (i === chunks.length - 1) {
-      u.onend = () => { if (token === speakToken) setSpeaking(null); };
-    }
-    u.onerror = (ev) => {
-      if (ev.error !== 'canceled' && ev.error !== 'interrupted') console.error('tts', ev.error);
-      if (token === speakToken && i === chunks.length - 1) setSpeaking(null);
-    };
-    synth.speak(u);
-  });
+  if (settings.voice.startsWith('edge:')) {
+    // 第一段短一点，尽快出声
+    await speakEdge(window.SpeechText.chunk(text, 400, 60), settings.voice.slice(5), token);
+  } else {
+    await speakSystem(window.SpeechText.chunk(text), token);
+  }
+  if (token === speakToken) setSpeaking(null);
+}
+
+function option(value, label) {
+  const o = document.createElement('option');
+  o.value = value;
+  o.textContent = label;
+  o.selected = value === settings.voice;
+  return o;
 }
 
 function fillVoices() {
-  const voices = synth.getVoices();
-  if (!voices.length) return;
-  const current = pickVoice();
-  const sel = $('voice');
-  sel.replaceChildren(...voices.map((v) => {
-    const o = document.createElement('option');
-    o.value = v.voiceURI;
-    o.textContent = v.name.replace(/^Microsoft\s+/, '').replace(/\s+-\s+.*$/, '') + ` (${v.lang})`;
-    o.selected = current && v.voiceURI === current.voiceURI;
-    return o;
-  }));
+  const groups = [];
+  if (edgeVoices.length) {
+    const g = document.createElement('optgroup');
+    g.label = '在线神经语音';
+    g.append(...edgeVoices.map((v) => option(`edge:${v.id}`, v.name)));
+    groups.push(g);
+  }
+  const sys = synth.getVoices();
+  if (sys.length) {
+    const g = document.createElement('optgroup');
+    g.label = '系统语音（离线）';
+    g.append(...sys.map((v) => option(`sys:${v.voiceURI}`,
+      v.name.replace(/^Microsoft\s+/, '').replace(/\s+-\s+.*$/, '') + ` (${v.lang})`)));
+    groups.push(g);
+  }
+  $('voice').replaceChildren(...groups);
 }
 
-$('voice').addEventListener('change', (e) => { settings.voiceURI = e.target.value; saveSettings(); });
+$('voice').addEventListener('change', (e) => { settings.voice = e.target.value; saveSettings(); });
 $('rate').value = settings.rate;
 $('rate-val').textContent = `${settings.rate}x`;
 $('rate').addEventListener('input', (e) => {
@@ -157,6 +244,7 @@ window.api.isPinned().then((on) => $('btn-pin').classList.toggle('on', on));
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') stop(); });
 
 synth.onvoiceschanged = fillVoices;
+window.api.edgeVoices().then((v) => { edgeVoices = v; fillVoices(); });
 fillVoices();
 refresh();
 setInterval(refresh, 3000);

@@ -26,4 +26,6 @@ assert.ok(out.includes('详情 链接'), out);
 const parts = chunk('一'.repeat(100) + '。' + '二'.repeat(100) + '。' + '三'.repeat(400));
 assert.ok(parts.every((p) => p.length <= 160), parts.map((p) => p.length));
 assert.strictEqual(parts.join(''), '一'.repeat(100) + '。' + '二'.repeat(100) + '。' + '三'.repeat(400));
+const first = chunk('短句。'.repeat(100), 400, 60);
+assert.ok(first[0].length <= 60 && first[1].length > 60 && first[1].length <= 400, first.map((p) => p.length));
 console.log('speech-text ok');

@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const sessions = require('./sessions');
+const edgeTts = require('./edge-tts');
 
 const COLLAPSED_HEIGHT = 40;
 let win;
@@ -63,14 +64,16 @@ function createWindow() {
 
 // 调试用：加载后截图并打印可用声音
 function snapshot(out) {
+  win.webContents.on('console-message', (e) => console.log('RENDERER', e.message));
   win.webContents.once('did-finish-load', () => setTimeout(async () => {
     const voices = await win.webContents.executeJavaScript(
       'speechSynthesis.getVoices().map(v => v.name + " | " + v.lang + (v.localService ? "" : " (online)"))');
     console.log('VOICES', JSON.stringify(voices));
     if (process.env.CLAUDE_FLOAT_SNAPSHOT_CLICK) {
       await win.webContents.executeJavaScript(`document.querySelectorAll('.item')[${Number(process.env.CLAUDE_FLOAT_SNAPSHOT_CLICK)}].click()`);
-      await new Promise((r) => setTimeout(r, 1500));
-      console.log('SPEAKING', await win.webContents.executeJavaScript('speechSynthesis.speaking'));
+      await new Promise((r) => setTimeout(r, Number(process.env.CLAUDE_FLOAT_SNAPSHOT_WAIT || 5000)));
+      console.log('SPEAKING', await win.webContents.executeJavaScript(
+        'JSON.stringify({ voice: settings.voice, system: speechSynthesis.speaking, neural: !!(currentAudio && !currentAudio.paused), status: document.getElementById("status").textContent })'));
     }
     fs.writeFileSync(out, (await win.webContents.capturePage()).toPNG());
     console.log('SNAPSHOT', out);
@@ -84,6 +87,8 @@ ipcMain.handle('sessions:reply', (_e, file) => {
   if (!abs.startsWith(path.resolve(sessions.ROOT) + path.sep)) throw new Error('bad path');
   return sessions.reply(abs);
 });
+ipcMain.handle('tts:voices', () => edgeTts.VOICES);
+ipcMain.handle('tts:synthesize', (_e, text, opts) => edgeTts.synthesize(String(text), opts));
 ipcMain.handle('win:pin', () => {
   const next = !win.isAlwaysOnTop();
   win.setAlwaysOnTop(next, 'screen-saver');
