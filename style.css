@@ -116,10 +116,10 @@ body {
   border: 0; border-radius: 5px;
   background: transparent; color: var(--muted);
   cursor: pointer;
-  visibility: hidden;
+  opacity: .55;
 }
 .reply-btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.item:hover .reply-btn, .item.waiting .reply-btn, .item.replying .reply-btn { visibility: visible; }
+.item:hover .reply-btn, .item.waiting .reply-btn, .item.replying .reply-btn { opacity: 1; }
 .reply-btn:hover { background: var(--bg); color: var(--fg); }
 .item.replying { outline: 1px solid var(--accent); outline-offset: -1px; }
 
