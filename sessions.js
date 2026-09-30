@@ -270,7 +270,7 @@ function list(limit = 20) {
     if (meta && meta.isArchived) continue; // 桌面版里已归档的不显示
     let info;
     try { info = inspect(f.file, f.stat); } catch { continue; }
-    if (!info.reply) continue; // 没有任何回复的会话不展示
+    if (!info.reply && !channels.has(f.id)) continue; // 没有任何回复的会话不展示，除非能从浮窗直接发消息
     const l = live.get(f.id);
     out.push({
       id: f.id,

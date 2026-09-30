@@ -74,7 +74,7 @@ function render() {
       tag.textContent = s.project;
       preview.append(tag);
     }
-    preview.append(s.preview);
+    preview.append(s.preview || (s.channel ? '新会话，可以直接从这里发第一条消息' : ''));
 
     li.append(title, meta, preview);
     li.addEventListener('click', () => toggleSpeak(s));
