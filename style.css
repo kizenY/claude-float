@@ -111,16 +111,14 @@ body {
 
 .meta { display: flex; align-items: center; gap: 4px; align-self: center; }
 .reply-btn {
-  width: 20px; height: 20px; padding: 0;
+  width: 22px; height: 22px; padding: 0;
   display: grid; place-items: center;
-  border: 0; border-radius: 5px;
-  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--accent);
   cursor: pointer;
-  opacity: .55;
 }
-.reply-btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.item:hover .reply-btn, .item.waiting .reply-btn, .item.replying .reply-btn { opacity: 1; }
-.reply-btn:hover { background: var(--bg); color: var(--fg); }
+.reply-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.reply-btn:hover, .item.replying .reply-btn { background: var(--accent); border-color: var(--accent); color: #fff; }
 .item.replying { outline: 1px solid var(--accent); outline-offset: -1px; }
 
 .composer {
