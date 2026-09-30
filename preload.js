@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('api', {
   togglePin: () => ipcRenderer.invoke('win:pin'),
   isPinned: () => ipcRenderer.invoke('win:isPinned'),
   toggleCollapse: () => ipcRenderer.invoke('win:collapse'),
-  close: () => ipcRenderer.invoke('win:close'),
+  hide: () => ipcRenderer.invoke('win:hide'),
+  send: (id, text) => ipcRenderer.invoke('sessions:send', { id, text }),
 });

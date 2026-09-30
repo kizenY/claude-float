@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/speech-text.test.js"
+    "test": "node test/speech-text.test.js && node test/status.test.js"
   },
   "devDependencies": {
     "electron": "^39.2.7"

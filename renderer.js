@@ -16,6 +16,7 @@ function saveSettings() {
 let sessions = [];
 let speakingId = null;
 let speakToken = 0;
+let replyTo = null; // 正在回复的会话
 
 function ago(ms) {
   const s = Math.max(0, (Date.now() - ms) / 1000);
@@ -25,25 +26,44 @@ function ago(ms) {
   return `${Math.floor(s / 86400)} 天前`;
 }
 
+const REPLY_ICON = '<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v4"/></svg>';
+
 function render() {
   $('empty').hidden = sessions.length > 0;
   listEl.replaceChildren(...sessions.map((s) => {
     const li = document.createElement('li');
-    li.className = 'item' + (s.id === speakingId ? ' speaking' : '');
+    li.className = 'item'
+      + (s.id === speakingId ? ' speaking' : '')
+      + (s.status === 'waiting' ? ' waiting' : '')
+      + (replyTo && s.id === replyTo.id ? ' replying' : '');
     li.title = '点击朗读最新回复，再点一次停止';
 
     const title = document.createElement('div');
     title.className = 'title';
     title.textContent = s.title;
 
-    const time = document.createElement('div');
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const time = document.createElement('span');
     time.className = 'time';
     if (s.id === speakingId) {
       time.innerHTML = '<span class="bars"><i></i><i></i><i></i></span>';
-    } else if (s.working && Date.now() - s.mtime < 60_000) {
-      time.innerHTML = '<span class="working">进行中</span>';
+    } else if (s.status === 'working') {
+      time.innerHTML = '<span class="chip working">进行中</span>';
+    } else if (s.status === 'waiting') {
+      time.innerHTML = '<span class="chip waiting">等待回复</span>';
+      time.title = 'Claude 在等你：提问、确认计划或批准操作';
     } else {
       time.textContent = ago(s.mtime);
+    }
+    meta.append(time);
+    if (s.localId) {
+      const btn = document.createElement('button');
+      btn.className = 'reply-btn';
+      btn.title = '快速回复';
+      btn.innerHTML = REPLY_ICON;
+      btn.addEventListener('click', (e) => { e.stopPropagation(); openComposer(s); });
+      meta.append(btn);
     }
 
     const preview = document.createElement('div');
@@ -56,7 +76,7 @@ function render() {
     }
     preview.append(s.preview);
 
-    li.append(title, time, preview);
+    li.append(title, meta, preview);
     li.addEventListener('click', () => toggleSpeak(s));
     return li;
   }));
@@ -232,7 +252,64 @@ $('rate').addEventListener('input', (e) => {
 });
 
 $('btn-stop').addEventListener('click', stop);
-$('btn-close').addEventListener('click', () => window.api.close());
+// ---- 快速回复 ----
+let sending = false;
+
+function setComposerStatus(text, kind = '') {
+  const el = $('composer-status');
+  el.textContent = text;
+  el.className = 'composer-status' + (kind ? ` ${kind}` : '');
+}
+
+function openComposer(s) {
+  replyTo = s;
+  $('composer').hidden = false;
+  $('composer-title').textContent = s.title;
+  setComposerStatus(s.status === 'working' ? 'Claude 还在干活，消息会排队' : '');
+  render();
+  $('composer-input').focus();
+}
+
+function closeComposer() {
+  if (sending) return;
+  replyTo = null;
+  $('composer').hidden = true;
+  $('composer-input').value = '';
+  render();
+}
+
+async function sendReply() {
+  const text = $('composer-input').value.trim();
+  if (!replyTo || !text || sending) return;
+  sending = true;
+  $('composer-send').disabled = true;
+  setComposerStatus('正在发送到 Claude…');
+  let res;
+  try {
+    res = await window.api.send(replyTo.id, text);
+  } catch (e) {
+    res = { ok: false, message: String(e.message || e) };
+  }
+  sending = false;
+  $('composer-send').disabled = false;
+  if (res.ok) {
+    $('composer-input').value = '';
+    setComposerStatus(res.message || '已发送', res.delivered === false ? '' : 'ok');
+    setTimeout(() => { if (!$('composer-input').value) closeComposer(); }, 1500);
+    refresh();
+  } else {
+    setComposerStatus(res.message || '发送失败', 'error');
+  }
+}
+
+$('composer').addEventListener('submit', (e) => { e.preventDefault(); sendReply(); });
+$('composer-cancel').addEventListener('click', closeComposer);
+$('composer-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendReply(); }
+  if (e.key === 'Escape') { e.stopPropagation(); closeComposer(); }
+});
+
+$('btn-close').addEventListener('click', () => window.api.hide());
 $('btn-collapse').addEventListener('click', async () => {
   const collapsed = await window.api.toggleCollapse();
   $('btn-collapse').title = collapsed ? '展开' : '收起';
