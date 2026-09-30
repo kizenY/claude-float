@@ -82,7 +82,7 @@ async function sendViaChannel({ channel, text, file }) {
     return { ok: false, message: `频道拒绝了这条消息（HTTP ${res.status}），内容已复制到剪贴板` };
   }
   const delivered = await waitInTranscript(file, text, sinceSize);
-  return { ok: true, delivered, message: delivered ? '已发送' : '已交给会话，但还没在会话记录里看到' };
+  return { ok: true, delivered, message: delivered ? '已发送' : '会话 10 秒内没收到。它若空闲，多半是组织没开启 Channels（channelsEnabled）' };
 }
 
 async function send({ localId, title, text, file, prevHwnd, minimizeAfter = false, dryRun = false }) {
