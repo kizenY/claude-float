@@ -6,6 +6,8 @@ const path = require('path');
 const ROOT = path.join(os.homedir(), '.claude', 'projects');
 // 桌面版自己的会话索引：local_<id>.json 里有 cliSessionId、标题、是否归档
 const DESKTOP_ROOT = path.join(os.homedir(), 'AppData', 'Roaming', 'Claude', 'claude-code-sessions');
+const LIVE_ROOT = path.join(os.homedir(), '.claude', 'sessions');
+const CHANNEL_ROOT = path.join(os.homedir(), '.claude-float', 'channels');
 // 先只读文件尾部，找不到回复再逐级放大
 const TAIL_STEPS = [512 * 1024, 4 * 1024 * 1024, Infinity];
 
@@ -204,6 +206,41 @@ function desktopIndex() {
   return index;
 }
 
+function alive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+
+function readJsonDir(dir, filter) {
+  let names = [];
+  try { names = fs.readdirSync(dir).filter(filter); } catch { return []; }
+  const out = [];
+  for (const name of names) {
+    try { out.push(JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))); } catch { /* 写入中 */ }
+  }
+  return out;
+}
+
+// Claude Code 自己维护的运行中会话登记表：sessionId -> { status: busy|idle|waiting|shell, waitingFor }
+// 只读 <pid>.json，旁边的 .key 是密钥，不碰
+function liveIndex() {
+  const index = new Map();
+  for (const s of readJsonDir(LIVE_ROOT, (n) => /^\d+\.json$/.test(n))) {
+    if (s.sessionId && s.pid && alive(s.pid)) index.set(s.sessionId, { status: s.status, waitingFor: s.waitingFor });
+  }
+  return index;
+}
+
+// 浮窗频道登记表（channel/server.js 写的）：sessionId -> { port, token }
+function channelIndex() {
+  const index = new Map();
+  for (const c of readJsonDir(CHANNEL_ROOT, (n) => n.endsWith('.json'))) {
+    if (c.sessionId && c.port && c.token && alive(c.serverPid)) index.set(c.sessionId, { port: c.port, token: c.token });
+  }
+  return index;
+}
+
+const LIVE_STATUS = { busy: 'working', waiting: 'waiting', idle: 'idle', shell: 'idle' };
+
 function list(limit = 20) {
   const files = [];
   for (const dir of subdirs(ROOT)) {
@@ -223,6 +260,8 @@ function list(limit = 20) {
   files.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
 
   const desktop = desktopIndex();
+  const live = liveIndex();
+  const channels = channelIndex();
   const now = Date.now();
   const out = [];
   for (const f of files) {
@@ -232,14 +271,18 @@ function list(limit = 20) {
     let info;
     try { info = inspect(f.file, f.stat); } catch { continue; }
     if (!info.reply) continue; // 没有任何回复的会话不展示
+    const l = live.get(f.id);
     out.push({
       id: f.id,
       file: f.file,
       mtime: f.stat.mtimeMs,
       title: (meta && meta.title) || info.title,
-      localId: meta ? meta.localId : null, // 有它才能从浮窗回复
+      localId: meta ? meta.localId : null,
+      channel: channels.has(f.id), // 用 cc 启动、带浮窗频道的命令行会话，可以直接回复
       project: info.cwd ? path.basename(info.cwd) : '',
-      status: statusOf(info.tail, f.stat.mtimeMs, now),
+      // 会话还在跑就用 Claude Code 自己报的状态，否则从会话记录推测
+      status: (l && LIVE_STATUS[l.status]) || statusOf(info.tail, f.stat.mtimeMs, now),
+      waitingFor: l && l.status === 'waiting' ? l.waitingFor || '' : '',
       preview: info.reply.replace(/\s+/g, ' ').slice(0, 120),
     });
   }
@@ -251,4 +294,8 @@ function reply(file) {
   return inspect(file, stat).reply;
 }
 
-module.exports = { list, reply, parse, statusOf, ROOT };
+function channelFor(id) {
+  return channelIndex().get(id) || null;
+}
+
+module.exports = { list, reply, parse, statusOf, channelFor, ROOT };

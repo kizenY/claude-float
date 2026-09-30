@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "claude-float": {
+      "command": "node",
+      "args": ["E:/develop/code/claude-float/channel/server.js"]
+    }
+  }
+}

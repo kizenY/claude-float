@@ -222,16 +222,19 @@ ipcMain.handle('sessions:reply', (_e, file) => {
 async function sendTo(id, text, dryRun = false) {
   const s = sessions.list(200).find((x) => x.id === id);
   if (!s) return { ok: false, message: '找不到这个会话' };
+  const channel = sessions.channelFor(id);
+  if (channel && !dryRun) return reply.sendViaChannel({ channel, text, file: s.file });
+  // 桌面版会话只能模拟界面操作，会把 Claude 窗口拉到前台，暂时只留给调试空跑用
+  if (!dryRun) return { ok: false, message: '这个会话没有浮窗频道，用 cc 启动的命令行会话才能直接回复' };
   const hwnd = win.getNativeWindowHandle();
   const prevHwnd = hwnd.length >= 8 ? hwnd.readBigUInt64LE(0) : hwnd.readUInt32LE(0);
-  // Claude 原本是最小化/在托盘里的，发完再把它收起来，浮窗就还留着
   const minimizeAfter = !claudeWindowOpen;
   sending = true;
   try {
     return await reply.send({ localId: s.localId, title: s.title, text, file: s.file, prevHwnd, minimizeAfter, dryRun });
   } finally {
     if (!win.isDestroyed()) win.showInactive();
-    setTimeout(() => { sending = false; lastWant = wantFloat(); }, 1500); // 等窗口状态稳定，别把浮窗藏掉
+    setTimeout(() => { sending = false; lastWant = wantFloat(); }, 1500);
   }
 }
 ipcMain.handle('sessions:send', (_e, { id, text }) => sendTo(id, text));

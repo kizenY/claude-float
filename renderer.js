@@ -52,12 +52,12 @@ function render() {
       time.innerHTML = '<span class="chip working">进行中</span>';
     } else if (s.status === 'waiting') {
       time.innerHTML = '<span class="chip waiting">等待回复</span>';
-      time.title = 'Claude 在等你：提问、确认计划或批准操作';
+      time.title = s.waitingFor ? `Claude 在等你：${s.waitingFor}` : 'Claude 在等你：提问、确认计划或批准操作';
     } else {
       time.textContent = ago(s.mtime);
     }
     meta.append(time);
-    if (s.localId) {
+    if (s.channel) {
       const btn = document.createElement('button');
       btn.className = 'reply-btn';
       btn.title = '快速回复';
