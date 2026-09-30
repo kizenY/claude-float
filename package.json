@@ -1,0 +1,14 @@
+{
+  "name": "claude-float",
+  "version": "0.1.0",
+  "description": "置顶小浮窗：列出本机 Claude 会话，点击朗读最新回复",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/speech-text.test.js"
+  },
+  "devDependencies": {
+    "electron": "^39.2.7"
+  }
+}

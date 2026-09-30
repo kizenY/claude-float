@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>Claude 播报</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="card">
+  <header class="bar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l1.6 6.1 5.9-2.4-4.3 4.8 5.3 3.4-6.3.3.9 6.3L12 15.6 8.9 21l.9-6.3-6.3-.3 5.3-3.4-4.3-4.8 5.9 2.4z"/></svg>
+      <span>Claude 播报</span>
+      <span id="speaking-dot" class="speaking-dot" hidden></span>
+    </div>
+    <div class="actions">
+      <button id="btn-stop" class="icon" title="停止朗读 (Esc)" hidden>
+        <svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
+      </button>
+      <button id="btn-pin" class="icon" title="置顶">
+        <svg viewBox="0 0 24 24"><path d="M15 3l6 6-3 1-4 4 .5 4.5L13 20l-4-4-5 5-1-1 5-5-4-4 1.5-1.5L10 10l4-4z"/></svg>
+      </button>
+      <button id="btn-collapse" class="icon" title="收起">
+        <svg viewBox="0 0 24 24"><path d="M6 12h12" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+      </button>
+      <button id="btn-close" class="icon" title="退出">
+        <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <ul id="list" class="list"></ul>
+  <div id="empty" class="empty" hidden>还没有找到会话记录</div>
+
+  <footer class="foot">
+    <select id="voice" title="声音"></select>
+    <label class="rate" title="语速">
+      <input id="rate" type="range" min="0.7" max="2" step="0.1">
+      <span id="rate-val"></span>
+    </label>
+  </footer>
+</div>
+<script src="speech-text.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>
