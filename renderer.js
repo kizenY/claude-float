@@ -27,6 +27,17 @@ function ago(ms) {
 }
 
 const REPLY_ICON = '<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v4"/></svg>';
+const SPEAK_ICON = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>';
+const STOP_ICON = '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>';
+
+function rowButton(icon, title, onClick) {
+  const btn = document.createElement('button');
+  btn.className = 'row-btn';
+  btn.title = title;
+  btn.innerHTML = icon;
+  btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+  return btn;
+}
 
 function render() {
   $('empty').hidden = sessions.length > 0;
@@ -36,7 +47,7 @@ function render() {
       + (s.id === speakingId ? ' speaking' : '')
       + (s.status === 'waiting' ? ' waiting' : '')
       + (replyTo && s.id === replyTo.id ? ' replying' : '');
-    li.title = '点击朗读最新回复，再点一次停止';
+    li.title = s.localId ? '点击在 Claude 桌面版里打开' : '命令行会话（桌面版里没有）';
 
     const title = document.createElement('div');
     title.className = 'title';
@@ -57,12 +68,11 @@ function render() {
       time.textContent = ago(s.mtime);
     }
     meta.append(time);
+    const speaking = s.id === speakingId;
+    meta.append(rowButton(speaking ? STOP_ICON : SPEAK_ICON, speaking ? '停止朗读' : '朗读最新回复', () => toggleSpeak(s)));
     if (s.channel) {
-      const btn = document.createElement('button');
-      btn.className = 'reply-btn';
-      btn.title = '快速回复';
-      btn.innerHTML = REPLY_ICON;
-      btn.addEventListener('click', (e) => { e.stopPropagation(); openComposer(s); });
+      const btn = rowButton(REPLY_ICON, '快速回复', () => openComposer(s));
+      btn.classList.add('reply-btn');
       meta.append(btn);
     }
 
@@ -77,7 +87,7 @@ function render() {
     preview.append(s.preview || (s.channel ? '新会话，可以直接从这里发第一条消息' : ''));
 
     li.append(title, meta, preview);
-    li.addEventListener('click', () => toggleSpeak(s));
+    li.addEventListener('click', () => openInClaude(s));
     return li;
   }));
 }
@@ -188,6 +198,11 @@ async function speakEdge(chunks, voice, token) {
     await playMp3(bytes).catch((e) => console.error(e));
     if (token !== speakToken) return;
   }
+}
+
+async function openInClaude(s) {
+  const res = await window.api.open(s.id);
+  if (!res.ok) flash(res.message);
 }
 
 async function toggleSpeak(s) {

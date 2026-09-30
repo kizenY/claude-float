@@ -110,6 +110,16 @@ body {
 .item.waiting { box-shadow: inset 2px 0 0 var(--wait); }
 
 .meta { display: flex; align-items: center; gap: 4px; align-self: center; }
+.row-btn {
+  width: 22px; height: 22px; padding: 0;
+  display: grid; place-items: center;
+  border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--muted);
+  cursor: pointer;
+}
+.row-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.row-btn:hover { background: var(--bg); border-color: var(--line); color: var(--fg); }
+.item.speaking .row-btn:not(.reply-btn) { color: var(--accent); }
 .reply-btn {
   width: 22px; height: 22px; padding: 0;
   display: grid; place-items: center;

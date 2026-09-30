@@ -1,25 +1,16 @@
 const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, nativeImage } = require('electron');
-const { spawn } = require('child_process');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const sessions = require('./sessions');
 const edgeTts = require('./edge-tts');
 const reply = require('./reply');
 
 const COLLAPSED_HEIGHT = 40;
-// Claude 桌面版运行时会独占这个文件，用它判断 Claude 开没开
-const CLAUDE_LOCKFILE = process.env.CLAUDE_FLOAT_LOCKFILE || path.join(os.homedir(), 'AppData', 'Roaming', 'Claude', 'lockfile');
-const BACKGROUND = process.argv.includes('--background'); // 开机自启时带这个参数
+const LOCAL_ID = /^local_[A-Za-z0-9-]{1,64}$/;
 
 let win;
 let tray;
 let expandedHeight = null;
-let lastWant = false; // 上一次判断浮窗该不该出现
-let claudeWindowOpen = true; // 没收到窗口状态之前先当 Claude 窗口开着
-let windowWatcher = null;
-let sending = false;
-let quitting = false;
 
 function statePath() {
   return path.join(app.getPath('userData'), 'window-state.json');
@@ -39,10 +30,9 @@ function saveBounds() {
   patchState({ x: b.x, y: b.y, width: b.width, height: expandedHeight || b.height, pinned: win.isAlwaysOnTop() });
 }
 
-// 偏好：follow 跟随 Claude 显示/隐藏（默认开），autostart 开机后台运行（默认关，托盘里手动勾选才写注册表）
+// 偏好：autostart 开机运行（默认关，托盘里手动勾选才写注册表）
 function prefs() {
-  const s = loadState();
-  return { follow: s.follow !== false, autostart: s.autostart === true };
+  return { autostart: loadState().autostart === true };
 }
 
 function applyAutostart(on) {
@@ -50,51 +40,8 @@ function applyAutostart(on) {
   app.setLoginItemSettings({
     openAtLogin: on,
     path: process.execPath,
-    args: app.isPackaged ? ['--background'] : [app.getAppPath(), '--background'],
+    args: app.isPackaged ? [] : [app.getAppPath()],
   });
-}
-
-function claudeRunning() {
-  try {
-    fs.closeSync(fs.openSync(CLAUDE_LOCKFILE, 'r+'));
-    return false; // 能打开说明没人占着，是残留文件
-  } catch (e) {
-    return e.code === 'EBUSY' || e.code === 'EPERM';
-  }
-}
-
-// 常驻的 PowerShell 小进程，Claude 窗口开着/最小化（或关到托盘）变化时打印 open / closed
-function watchClaudeWindow() {
-  if (process.env.CLAUDE_FLOAT_WINDOW) { claudeWindowOpen = process.env.CLAUDE_FLOAT_WINDOW === 'open'; return; } // 调试
-  windowWatcher = spawn('powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'claude-window.ps1')],
-    { windowsHide: true });
-  let buf = '';
-  windowWatcher.stdout.on('data', (d) => {
-    buf += d;
-    const lines = buf.split(/\r?\n/);
-    buf = lines.pop();
-    for (const line of lines) {
-      if (line === 'open' || line === 'closed') { claudeWindowOpen = line === 'open'; followClaude(); }
-    }
-  });
-  windowWatcher.on('exit', () => { windowWatcher = null; if (!quitting) setTimeout(watchClaudeWindow, 3000); });
-}
-
-// 浮窗是 Claude 主窗口的替身：Claude 在跑但窗口最小化/关到托盘时出现，窗口开着或 Claude 退出时隐藏
-const wantFloat = () => claudeRunning() && !claudeWindowOpen;
-
-// 只在该出现/该隐藏的那一刻动窗口，中间你手动显示/隐藏都算数；快速回复时 Claude 会闪到前台，这期间不跟
-function followClaude() {
-  if (!win || win.isDestroyed() || sending) return;
-  const want = wantFloat();
-  if (prefs().follow && want !== lastWant) {
-    if (want) win.showInactive();
-    else win.hide();
-    refreshTray();
-  }
-  lastWant = want;
-  if (process.env.CLAUDE_FLOAT_DEBUG) console.log('FOLLOW', JSON.stringify({ t: Math.round(process.uptime()), want, visible: win.isVisible() }));
 }
 
 function onSomeDisplay(s) {
@@ -131,12 +78,7 @@ function createWindow() {
   });
   win.setAlwaysOnTop(s.pinned !== false, 'screen-saver');
   win.loadFile('index.html');
-  win.once('ready-to-show', () => {
-    lastWant = wantFloat();
-    // 开机自启时按 Claude 的状态决定；手动打开总是显示
-    if (!BACKGROUND || lastWant) win.showInactive();
-    refreshTray();
-  });
+  win.once('ready-to-show', () => { win.showInactive(); refreshTray(); });
   win.on('moved', saveBounds);
   win.on('resized', saveBounds);
   win.on('show', refreshTray);
@@ -178,11 +120,7 @@ function refreshTray() {
     { label: win.isVisible() ? '隐藏浮窗' : '显示浮窗', click: toggleWindow },
     { type: 'separator' },
     {
-      label: '跟随 Claude：主窗口开着时隐藏，最小化时显示', type: 'checkbox', checked: p.follow,
-      click: (item) => { patchState({ follow: item.checked }); refreshTray(); },
-    },
-    {
-      label: '开机后台运行', type: 'checkbox', checked: p.autostart,
+      label: '开机自动运行', type: 'checkbox', checked: p.autostart,
       click: (item) => { patchState({ autostart: item.checked }); applyAutostart(item.checked); refreshTray(); },
     },
     { type: 'separator' },
@@ -204,9 +142,6 @@ function snapshot(out) {
     if (process.env.CLAUDE_FLOAT_SNAPSHOT_JS) {
       console.log('JS', JSON.stringify(await win.webContents.executeJavaScript(process.env.CLAUDE_FLOAT_SNAPSHOT_JS)));
     }
-    if (process.env.CLAUDE_FLOAT_SNAPSHOT_DRYRUN) {
-      console.log('DRYRUN', JSON.stringify(await sendTo(process.env.CLAUDE_FLOAT_SNAPSHOT_DRYRUN, '浮窗快速回复测试（空跑，不会发送）', true)));
-    }
     fs.writeFileSync(out, (await win.webContents.capturePage()).toPNG());
     console.log('SNAPSHOT', out);
   }, 2500));
@@ -219,24 +154,21 @@ ipcMain.handle('sessions:reply', (_e, file) => {
   if (!abs.startsWith(path.resolve(sessions.ROOT) + path.sep)) throw new Error('bad path');
   return sessions.reply(abs);
 });
-async function sendTo(id, text, dryRun = false) {
+async function sendTo(id, text) {
   const s = sessions.list(200).find((x) => x.id === id);
   if (!s) return { ok: false, message: '找不到这个会话' };
   const channel = sessions.channelFor(id);
-  if (channel && !dryRun) return reply.sendViaChannel({ channel, text, file: s.file });
-  // 桌面版会话只能模拟界面操作，会把 Claude 窗口拉到前台，暂时只留给调试空跑用
-  if (!dryRun) return { ok: false, message: '这个会话没有浮窗频道，用 cc 启动的命令行会话才能直接回复' };
-  const hwnd = win.getNativeWindowHandle();
-  const prevHwnd = hwnd.length >= 8 ? hwnd.readBigUInt64LE(0) : hwnd.readUInt32LE(0);
-  const minimizeAfter = !claudeWindowOpen;
-  sending = true;
-  try {
-    return await reply.send({ localId: s.localId, title: s.title, text, file: s.file, prevHwnd, minimizeAfter, dryRun });
-  } finally {
-    if (!win.isDestroyed()) win.showInactive();
-    setTimeout(() => { sending = false; lastWant = wantFloat(); }, 1500);
-  }
+  if (!channel) return { ok: false, message: '这个会话没有浮窗频道，用 cc 启动的命令行会话才能直接回复' };
+  return reply.sendViaChannel({ channel, text, file: s.file });
 }
+// 在 Claude 桌面版里打开这个会话（深链接会把 Claude 窗口拉到前台，这里正是想要的）
+ipcMain.handle('sessions:open', async (_e, id) => {
+  const s = sessions.list(200).find((x) => x.id === id);
+  if (!s) return { ok: false, message: '找不到这个会话' };
+  if (!LOCAL_ID.test(s.localId || '')) return { ok: false, message: '这是命令行会话，Claude 桌面版里没有' };
+  await shell.openExternal(`claude://code/continue?session=${s.localId}`);
+  return { ok: true };
+});
 ipcMain.handle('sessions:send', (_e, { id, text }) => sendTo(id, text));
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);
 ipcMain.handle('tts:synthesize', (_e, text, opts) => edgeTts.synthesize(String(text), opts));
@@ -269,9 +201,6 @@ if (!app.requestSingleInstanceLock()) {
     if (prefs().autostart) applyAutostart(true); // 刷新一下启动路径，项目挪过位置也不怕
     createWindow();
     createTray();
-    watchClaudeWindow();
-    setInterval(followClaude, 2000);
   });
-  app.on('before-quit', () => { quitting = true; if (windowWatcher) windowWatcher.kill(); });
   app.on('window-all-closed', () => app.quit());
 }

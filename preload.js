@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld('api', {
   toggleCollapse: () => ipcRenderer.invoke('win:collapse'),
   hide: () => ipcRenderer.invoke('win:hide'),
   send: (id, text) => ipcRenderer.invoke('sessions:send', { id, text }),
+  open: (id) => ipcRenderer.invoke('sessions:open', id),
 });
