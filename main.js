@@ -6,7 +6,6 @@ const edgeTts = require('./edge-tts');
 const reply = require('./reply');
 
 const COLLAPSED_HEIGHT = 40;
-const LOCAL_ID = /^local_[A-Za-z0-9-]{1,64}$/;
 
 let win;
 let tray;
@@ -161,14 +160,6 @@ async function sendTo(id, text) {
   if (!channel) return { ok: false, message: '这个会话没有浮窗频道，用 cc 启动的命令行会话才能直接回复' };
   return reply.sendViaChannel({ channel, text, file: s.file });
 }
-// 在 Claude 桌面版里打开这个会话（深链接会把 Claude 窗口拉到前台，这里正是想要的）
-ipcMain.handle('sessions:open', async (_e, id) => {
-  const s = sessions.list(200).find((x) => x.id === id);
-  if (!s) return { ok: false, message: '找不到这个会话' };
-  if (!LOCAL_ID.test(s.localId || '')) return { ok: false, message: '这是命令行会话，Claude 桌面版里没有' };
-  await shell.openExternal(`claude://code/continue?session=${s.localId}`);
-  return { ok: true };
-});
 ipcMain.handle('sessions:send', (_e, { id, text }) => sendTo(id, text));
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);
 ipcMain.handle('tts:synthesize', (_e, text, opts) => edgeTts.synthesize(String(text), opts));

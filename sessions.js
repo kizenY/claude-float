@@ -1,11 +1,9 @@
-// 读取 ~/.claude/projects 下的 Claude Code / Claude 桌面版会话记录（JSONL）
+// 读取 ~/.claude/projects 下的 Claude Code 会话记录（JSONL）
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
 const ROOT = path.join(os.homedir(), '.claude', 'projects');
-// 桌面版自己的会话索引：local_<id>.json 里有 cliSessionId、标题、是否归档
-const DESKTOP_ROOT = path.join(os.homedir(), 'AppData', 'Roaming', 'Claude', 'claude-code-sessions');
 const LIVE_ROOT = path.join(os.homedir(), '.claude', 'sessions');
 const CHANNEL_ROOT = path.join(os.homedir(), '.claude-float', 'channels');
 // 先只读文件尾部，找不到回复再逐级放大
@@ -17,7 +15,6 @@ const INTERACTIVE_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 const LONG_TOOLS = new Set(['Agent', 'Task', 'Workflow', 'Monitor', 'TaskOutput', 'ScheduleWakeup']);
 
 const cache = new Map(); // file -> { mtimeMs, size, info }
-const desktopCache = new Map(); // file -> { mtimeMs, meta }
 
 // 可选：CLAUDE_FLOAT_PROJECTS=carl,pawkit 只显示目录名包含这些关键字的项目
 const ONLY = (process.env.CLAUDE_FLOAT_PROJECTS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -180,32 +177,6 @@ function subdirs(dir) {
   } catch { return []; }
 }
 
-// cliSessionId -> { localId, title, isArchived }
-function desktopIndex() {
-  const index = new Map();
-  for (const account of subdirs(DESKTOP_ROOT)) {
-    for (const org of subdirs(account)) {
-      let names = [];
-      try { names = fs.readdirSync(org); } catch { continue; }
-      for (const name of names) {
-        if (!name.startsWith('local_') || !name.endsWith('.json')) continue;
-        const file = path.join(org, name);
-        try {
-          const { mtimeMs } = fs.statSync(file);
-          let hit = desktopCache.get(file);
-          if (!hit || hit.mtimeMs !== mtimeMs) {
-            const d = JSON.parse(fs.readFileSync(file, 'utf8'));
-            hit = { mtimeMs, meta: { localId: d.sessionId, cliSessionId: d.cliSessionId, title: d.title, isArchived: !!d.isArchived } };
-            desktopCache.set(file, hit);
-          }
-          if (hit.meta.cliSessionId) index.set(hit.meta.cliSessionId, hit.meta);
-        } catch { /* 写入中 */ }
-      }
-    }
-  }
-  return index;
-}
-
 function alive(pid) {
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
@@ -259,15 +230,12 @@ function list(limit = 20) {
   }
   files.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
 
-  const desktop = desktopIndex();
   const live = liveIndex();
   const channels = channelIndex();
   const now = Date.now();
   const out = [];
   for (const f of files) {
     if (out.length >= limit) break;
-    const meta = desktop.get(f.id);
-    if (meta && meta.isArchived) continue; // 桌面版里已归档的不显示
     let info;
     try { info = inspect(f.file, f.stat); } catch { continue; }
     if (!info.reply && !channels.has(f.id)) continue; // 没有任何回复的会话不展示，除非能从浮窗直接发消息
@@ -276,9 +244,8 @@ function list(limit = 20) {
       id: f.id,
       file: f.file,
       mtime: f.stat.mtimeMs,
-      title: (meta && meta.title) || info.title,
-      localId: meta ? meta.localId : null,
-      channel: channels.has(f.id), // 用 cc 启动、带浮窗频道的命令行会话，可以直接回复
+      title: info.title,
+      channel: channels.has(f.id), // 用 cc 启动、带浮窗频道的会话，可以直接回复
       project: info.cwd ? path.basename(info.cwd) : '',
       // 会话还在跑就用 Claude Code 自己报的状态，否则从会话记录推测
       status: (l && LIVE_STATUS[l.status]) || statusOf(info.tail, f.stat.mtimeMs, now),

@@ -129,6 +129,8 @@ body {
 }
 .reply-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .reply-btn:hover, .item.replying .reply-btn { background: var(--accent); border-color: var(--accent); color: #fff; }
+.reply-btn.off { opacity: .35; }
+.reply-btn.off:hover { background: var(--bg); border-color: var(--line); color: var(--accent); }
 .item.replying { outline: 1px solid var(--accent); outline-offset: -1px; }
 
 .composer {

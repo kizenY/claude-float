@@ -47,7 +47,7 @@ function render() {
       + (s.id === speakingId ? ' speaking' : '')
       + (s.status === 'waiting' ? ' waiting' : '')
       + (replyTo && s.id === replyTo.id ? ' replying' : '');
-    li.title = s.localId ? '点击在 Claude 桌面版里打开' : '命令行会话（桌面版里没有）';
+    li.title = s.channel ? '点击快速回复' : '用 cc 启动的会话才能直接回复（这个不行）';
 
     const title = document.createElement('div');
     title.className = 'title';
@@ -70,11 +70,13 @@ function render() {
     meta.append(time);
     const speaking = s.id === speakingId;
     meta.append(rowButton(speaking ? STOP_ICON : SPEAK_ICON, speaking ? '停止朗读' : '朗读最新回复', () => toggleSpeak(s)));
-    if (s.channel) {
-      const btn = rowButton(REPLY_ICON, '快速回复', () => openComposer(s));
-      btn.classList.add('reply-btn');
-      meta.append(btn);
-    }
+    const replyBtn = rowButton(REPLY_ICON, s.channel ? '快速回复' : '这个会话不是用 cc 启动的，没法直接回复', () => {
+      if (s.channel) openComposer(s);
+      else flash('用 cc 启动 claude，才能从这里直接回复');
+    });
+    replyBtn.classList.add('reply-btn');
+    if (!s.channel) replyBtn.classList.add('off');
+    meta.append(replyBtn);
 
     const preview = document.createElement('div');
     preview.className = 'preview';
@@ -87,7 +89,10 @@ function render() {
     preview.append(s.preview || (s.channel ? '新会话，可以直接从这里发第一条消息' : ''));
 
     li.append(title, meta, preview);
-    li.addEventListener('click', () => openInClaude(s));
+    li.addEventListener('click', () => {
+      if (s.channel) openComposer(s);
+      else flash('用 cc 启动 claude，才能从这里直接回复');
+    });
     return li;
   }));
 }
@@ -198,11 +203,6 @@ async function speakEdge(chunks, voice, token) {
     await playMp3(bytes).catch((e) => console.error(e));
     if (token !== speakToken) return;
   }
-}
-
-async function openInClaude(s) {
-  const res = await window.api.open(s.id);
-  if (!res.ok) flash(res.message);
 }
 
 async function toggleSpeak(s) {
