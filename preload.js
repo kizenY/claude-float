@@ -9,5 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   isPinned: () => ipcRenderer.invoke('win:isPinned'),
   toggleCollapse: () => ipcRenderer.invoke('win:collapse'),
   hide: () => ipcRenderer.invoke('win:hide'),
+  quickDirs: () => ipcRenderer.invoke('dirs:list'),
+  spawnCf: (dir) => ipcRenderer.invoke('session:spawn', dir),
   send: (id, text) => ipcRenderer.invoke('sessions:send', { id, text }),
 });

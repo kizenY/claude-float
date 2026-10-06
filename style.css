@@ -167,6 +167,33 @@ body {
 
 .empty { flex: 1; display: grid; place-items: center; color: var(--muted); }
 
+.launch {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--line);
+}
+.launch button {
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 0;
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.launch button:hover {
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .foot {
   flex: none;
   display: flex; align-items: center; gap: 8px;

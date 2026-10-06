@@ -325,6 +325,27 @@ $('composer-input').addEventListener('keydown', (e) => {
 });
 
 $('btn-close').addEventListener('click', () => window.api.hide());
+
+// ---- 快捷启动：一键在常用目录起 cf 会话 ----
+function renderQuickDirs(dirs) {
+  $('launch').replaceChildren(...dirs.map((d) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = `+ ${d.name}`;
+    btn.title = `在 ${d.path} 启动 cf 会话`;
+    btn.addEventListener('click', async () => {
+      try {
+        const res = await window.api.spawnCf(d.path);
+        flash(`已从 ${res.name} 启动 cf 会话`);
+      } catch (e) {
+        flash(`启动失败：${String(e.message || e)}`);
+      }
+    });
+    return btn;
+  }));
+}
+window.api.quickDirs().then(renderQuickDirs).catch(() => {});
+
 $('btn-collapse').addEventListener('click', async () => {
   const collapsed = await window.api.toggleCollapse();
   $('btn-collapse').title = collapsed ? '展开' : '收起';

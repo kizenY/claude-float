@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, nativeImage } = require('electron');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const sessions = require('./sessions');
@@ -161,6 +162,27 @@ async function sendTo(id, text) {
   return reply.sendViaChannel({ channel, text, file: s.file });
 }
 ipcMain.handle('sessions:send', (_e, { id, text }) => sendTo(id, text));
+
+// ---- 快捷启动：从浮窗直接在常用目录起一个 cf 会话 ----
+// 想改目录列表就改这里（name 显示在按钮上，path 是新终端的工作目录）。
+const QUICK_DIRS = [
+  { name: 'carl', path: 'E:\\agent-cluster\\carl' },
+  { name: 'seesaw', path: 'E:\\agent-cluster\\seesaw' },
+  { name: 'finchip', path: 'E:\\agent-cluster\\finchip' },
+];
+ipcMain.handle('dirs:list', () => QUICK_DIRS);
+ipcMain.handle('session:spawn', (_e, dir) => {
+  // 只白名单里的目录可以起，防止 renderer 被注入任意路径
+  const target = QUICK_DIRS.find((d) => d.path === dir);
+  if (!target) throw new Error('bad dir');
+  const cfCmd = path.join(__dirname, 'cf.cmd'); // 全路径，不依赖 PATH（浮窗进程的环境可能是旧 PATH）
+  // 浮窗是 GUI 程序、没有控制台，Windows 会给控制台子进程自动分配新窗口，
+  // 所以直接 spawn 即可。不要走 cmd 的 start（这台机器上 start 拉起 .cmd 不稳定），
+  // 也不要 detached（实测 detached 的控制台子进程会静默吞掉脚本不执行）。
+  // /k 让 claude 退出后窗口留在提示符，方便回看记录。
+  spawn('C:\\Windows\\System32\\cmd.exe', ['/k', cfCmd], { cwd: target.path, stdio: 'ignore' }).unref();
+  return { ok: true, name: target.name };
+});
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);
 ipcMain.handle('tts:synthesize', (_e, text, opts) => edgeTts.synthesize(String(text), opts));
 ipcMain.handle('win:pin', () => {
