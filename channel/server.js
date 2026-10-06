@@ -9,6 +9,12 @@ const os = require('os');
 const path = require('path');
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
+const { SUPPORTED_PROTOCOL_VERSIONS } = require('@modelcontextprotocol/sdk/types.js');
+
+// Claude Code 的 channels 只注册协商出 2026-07-28 protocol revision 的 MCP server，
+// 而 SDK 的列表停在 2025-11-25（client 求新版会被回落成旧版，channels 就不认这个 server）。
+// 新版 revision 对我们用到的消息（initialize + channel notification）向后兼容，直接宣告支持。
+if (!SUPPORTED_PROTOCOL_VERSIONS.includes('2026-07-28')) SUPPORTED_PROTOCOL_VERSIONS.unshift('2026-07-28');
 
 const REG_DIR = path.join(os.homedir(), '.claude-float', 'channels');
 const SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions');
