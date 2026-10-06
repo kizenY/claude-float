@@ -157,7 +157,7 @@ async function sendTo(id, text) {
   const s = sessions.list(200).find((x) => x.id === id);
   if (!s) return { ok: false, message: '找不到这个会话' };
   const channel = sessions.channelFor(id);
-  if (!channel) return { ok: false, message: '这个会话没有浮窗频道，用 cc 启动的命令行会话才能直接回复' };
+  if (!channel) return { ok: false, message: '这个会话没有浮窗频道，用 cf 启动的命令行会话才能直接回复' };
   return reply.sendViaChannel({ channel, text, file: s.file });
 }
 ipcMain.handle('sessions:send', (_e, { id, text }) => sendTo(id, text));

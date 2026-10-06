@@ -3,14 +3,15 @@
 Windows 上一个置顶的小浮窗：列出本机最近的 Claude Code（命令行）会话，状态一览、一键朗读最新回复、直接在浮窗里回复。
 
 - 数据源：`~/.claude/projects/*/*.jsonl`，只读
-- **点击会话那一行**：直接打开底部输入框回复（只对用 `cc` 启动的会话；普通 `claude` 启动的会话会提示改用 `cc`）
+- **点击会话那一行**：直接打开底部输入框回复（只对用 `cf` 启动的会话；普通 `claude` 启动的会话会提示改用 `cf`）
 - **喇叭按钮**：朗读这个会话的最新回复；再点一次、点标题栏的方块或按 `Esc` 停止
 - 朗读前会清理 Markdown：代码块读成「代码略」，链接只读文字，路径只读文件名，表格按行读
 - 每个会话右边是状态：**进行中**（Claude 在干活）、**等待回复**（Claude 在问你、等你确认计划，或者工具调用很久没结果，多半在等你批准），否则显示最后一条回复是多久之前
-- **快速回复**（只对用 `cc` 启动的命令行会话）：会话右边的橙色箭头，或点会话那一行；底部输入框 Enter 发送、Shift+Enter 换行、Esc 取消。消息通过 Claude Code 官方的 [Channels](https://code.claude.com/docs/en/channels)（研究预览）直接推进会话，不碰任何窗口；Claude 空闲会马上回复，正忙会排到下一轮
-  - `cc` = `claude --mcp-config channel/mcp.json --dangerously-load-development-channels server:claude-float`，参数照常往后加。启动时 Claude Code 会先弹一个开发频道的警告，选「I am using this for local development」继续
+- **快速回复**（只对用 `cf` 启动的命令行会话）：会话右边的橙色箭头，或点会话那一行；底部输入框 Enter 发送、Shift+Enter 换行、Esc 取消。消息通过 Claude Code 官方的 [Channels](https://code.claude.com/docs/en/channels)（研究预览）直接推进会话，不碰任何窗口；Claude 空闲会马上回复，正忙会排到下一轮
+  - `cf` = 设 `CLAUDE_FLOAT_CHANNEL=1` 后跑 `claude --dangerously-load-development-channels server:claude-float`，参数照常往后加（脚本在项目目录 `cf.cmd`）。启动时 Claude Code 会先弹一个开发频道的警告，选「I am using this for local development」继续
+  - 频道 server（`channel/server.js`）注册在 user scope（`claude mcp add -s user`），所以任何目录启动的 claude 都会加载它；但只有 `cf` 启动的会话开了频道，浮窗只给这种会话显示回复按钮。想撤销注册：`claude mcp remove claude-float`
   - `channel/server.js` 由 Claude Code 拉起，在 127.0.0.1 随机端口等浮窗的消息，每个会话一个一次性密令，登记在 `~/.claude-float/channels/`
-  - 没有浮窗频道的会话，回复按钮是半透明的，点一下会提示改用 `cc` 启动；已运行的普通会话没法补频道，下次用 `cc` 启动即可
+  - 没有浮窗频道的会话，回复按钮是半透明的，点一下会提示改用 `cf` 启动；已运行的普通会话没法补频道，下次用 `cf` 启动即可
 - 状态优先用 Claude Code 自己写的 `~/.claude/sessions/<pid>.json`（busy / waiting / idle），会话没在跑时才从会话记录推测
 - 标题栏：图钉切换置顶 · 横线收起成一条 · 叉隐藏到托盘；窗口位置、大小、置顶状态会记住
 - **托盘图标**（橙色圆点）：单击显示/隐藏；右键菜单里可以开关「开机自动运行」（默认关），以及退出

@@ -202,10 +202,12 @@ function liveIndex() {
 }
 
 // 浮窗频道登记表（channel/server.js 写的）：sessionId -> { port, token }
+// 只有 channel:true 的登记才可回复——server 已在 user scope 注册，普通 claude 会话也会加载它，
+// 但那种会话没走 cf 的 --dangerously-load-development-channels，频道消息发进去会被静默丢弃
 function channelIndex() {
   const index = new Map();
   for (const c of readJsonDir(CHANNEL_ROOT, (n) => n.endsWith('.json'))) {
-    if (c.sessionId && c.port && c.token && alive(c.serverPid)) index.set(c.sessionId, { port: c.port, token: c.token });
+    if (c.channel && c.sessionId && c.port && c.token && alive(c.serverPid)) index.set(c.sessionId, { port: c.port, token: c.token });
   }
   return index;
 }
@@ -245,7 +247,7 @@ function list(limit = 20) {
       file: f.file,
       mtime: f.stat.mtimeMs,
       title: info.title,
-      channel: channels.has(f.id), // 用 cc 启动、带浮窗频道的会话，可以直接回复
+      channel: channels.has(f.id), // 用 cf 启动、带浮窗频道的会话，可以直接回复
       project: info.cwd ? path.basename(info.cwd) : '',
       // 会话还在跑就用 Claude Code 自己报的状态，否则从会话记录推测
       status: (l && LIVE_STATUS[l.status]) || statusOf(info.tail, f.stat.mtimeMs, now),

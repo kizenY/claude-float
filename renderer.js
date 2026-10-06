@@ -47,7 +47,7 @@ function render() {
       + (s.id === speakingId ? ' speaking' : '')
       + (s.status === 'waiting' ? ' waiting' : '')
       + (replyTo && s.id === replyTo.id ? ' replying' : '');
-    li.title = s.channel ? '点击快速回复' : '用 cc 启动的会话才能直接回复（这个不行）';
+    li.title = s.channel ? '点击快速回复' : '用 cf 启动的会话才能直接回复（这个不行）';
 
     const title = document.createElement('div');
     title.className = 'title';
@@ -70,9 +70,9 @@ function render() {
     meta.append(time);
     const speaking = s.id === speakingId;
     meta.append(rowButton(speaking ? STOP_ICON : SPEAK_ICON, speaking ? '停止朗读' : '朗读最新回复', () => toggleSpeak(s)));
-    const replyBtn = rowButton(REPLY_ICON, s.channel ? '快速回复' : '这个会话不是用 cc 启动的，没法直接回复', () => {
+    const replyBtn = rowButton(REPLY_ICON, s.channel ? '快速回复' : '这个会话不是用 cf 启动的，没法直接回复', () => {
       if (s.channel) openComposer(s);
-      else flash('用 cc 启动 claude，才能从这里直接回复');
+      else flash('用 cf 启动 claude，才能从这里直接回复');
     });
     replyBtn.classList.add('reply-btn');
     if (!s.channel) replyBtn.classList.add('off');
@@ -91,7 +91,7 @@ function render() {
     li.append(title, meta, preview);
     li.addEventListener('click', () => {
       if (s.channel) openComposer(s);
-      else flash('用 cc 启动 claude，才能从这里直接回复');
+      else flash('用 cf 启动 claude，才能从这里直接回复');
     });
     return li;
   }));

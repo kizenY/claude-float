@@ -1,5 +1,5 @@
 // Claude 播报的频道服务器（Claude Code Channels，研究预览）
-// 由 Claude Code 在会话启动时拉起（见 cc.cmd / mcp.json），通过 stdio 讲 MCP。
+// 由 Claude Code 在会话启动时拉起（user scope 注册，见 cf.cmd），通过 stdio 讲 MCP。
 // 它在 127.0.0.1 随机端口上等浮窗发来的文字，收到后用 notifications/claude/channel 推进这个会话。
 // 登记文件：~/.claude-float/channels/<本进程 pid>.json，里面有会话 ID、端口和一次性密令，只有浮窗读得到。
 const crypto = require('crypto');
@@ -9,14 +9,19 @@ const os = require('os');
 const path = require('path');
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
-const { SUPPORTED_PROTOCOL_VERSIONS } = require('@modelcontextprotocol/sdk/types.js');
 
-// Claude Code 的 channels 只注册协商出 2026-07-28 protocol revision 的 MCP server，
-// 而 SDK 的列表停在 2025-11-25（client 求新版会被回落成旧版，channels 就不认这个 server）。
-// 新版 revision 对我们用到的消息（initialize + channel notification）向后兼容，直接宣告支持。
-if (!SUPPORTED_PROTOCOL_VERSIONS.includes('2026-07-28')) SUPPORTED_PROTOCOL_VERSIONS.unshift('2026-07-28');
-
+// 诊断日志（不含 token）：Claude Code 默认不落 stderr，自己写文件才能看到协商过程。
+// 进程退出时随登记一起删掉；排查时先看 ~/.claude-float/channels/debug-<pid>.log
 const REG_DIR = path.join(os.homedir(), '.claude-float', 'channels');
+const DEBUG_FILE = path.join(REG_DIR, `debug-${process.pid}.log`);
+function debug(...a) {
+  try {
+    fs.mkdirSync(REG_DIR, { recursive: true });
+    fs.appendFileSync(DEBUG_FILE, `${new Date().toISOString()} ${a.join(' ')}\n`);
+  } catch { /* 日志失败不影响主流程 */ }
+}
+debug('server start pid', process.pid, 'ppid', process.ppid);
+
 const SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions');
 const REG_FILE = path.join(REG_DIR, `${process.pid}.json`);
 const TOKEN = crypto.randomBytes(24).toString('hex');
@@ -41,7 +46,7 @@ let lastWritten = '';
 function writeRegistration() {
   const s = currentSession();
   if (!s || !port) return;
-  const reg = JSON.stringify({ ...s, port, token: TOKEN, serverPid: process.pid, updatedAt: Date.now() });
+  const reg = JSON.stringify({ ...s, port, token: TOKEN, serverPid: process.pid, channel: process.env.CLAUDE_FLOAT_CHANNEL === '1', updatedAt: Date.now() });
   const key = `${s.sessionId}:${port}`;
   if (key === lastWritten) return;
   fs.mkdirSync(REG_DIR, { recursive: true });
@@ -52,6 +57,7 @@ function writeRegistration() {
 
 function cleanup() {
   try { fs.unlinkSync(REG_FILE); } catch { /* 已删 */ }
+  try { fs.unlinkSync(DEBUG_FILE); } catch { /* 已删 */ }
 }
 
 const mcp = new Server(
@@ -70,6 +76,7 @@ async function push(text) {
     method: 'notifications/claude/channel',
     params: { content: text, meta: { via: 'float_widget' } },
   });
+  debug('pushed channel notification,', text.length, 'chars');
 }
 
 const httpServer = http.createServer((req, res) => {
@@ -101,6 +108,24 @@ const httpServer = http.createServer((req, res) => {
 });
 
 async function main() {
+  // 包装 initialize handler：把 client 请求的 protocolVersion 和协商结果记入 debug 日志，
+  // 排查「channels 不注册」时先看这里（历史教训：channels 只认 user/project 等 scope 里配置的服务器，
+  // 跟 --mcp-config 加载的协商无关）
+  const { InitializeRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+  const origInit = mcp._requestHandlers.get('initialize');
+  if (origInit) {
+    mcp.setRequestHandler(InitializeRequestSchema, async (req, extra) => {
+      debug('initialize requested: protocolVersion =', req.params && req.params.protocolVersion,
+        '| clientInfo =', JSON.stringify(req.params && req.params.clientInfo));
+      const result = await origInit(req, extra);
+      debug('initialize negotiated: protocolVersion =', result && result.protocolVersion,
+        '| server capabilities =', JSON.stringify(result && result.capabilities));
+      return result;
+    });
+  } else {
+    debug('WARN: no initialize handler found on Server instance — SDK internals changed?');
+  }
+
   await mcp.connect(new StdioServerTransport());
   httpServer.listen(0, '127.0.0.1', () => {
     port = httpServer.address().port;
