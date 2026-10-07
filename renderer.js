@@ -213,7 +213,7 @@ async function toggleSpeak(s) {
 
   let text;
   try {
-    text = window.SpeechText.toSpeech(await window.api.reply(s.file));
+    text = s.file ? window.SpeechText.toSpeech(await window.api.reply(s.file)) : '';
   } catch (e) {
     console.error(e);
     text = '读取会话失败。';

@@ -175,12 +175,16 @@ ipcMain.handle('session:spawn', (_e, dir) => {
   // 只白名单里的目录可以起，防止 renderer 被注入任意路径
   const target = QUICK_DIRS.find((d) => d.path === dir);
   if (!target) throw new Error('bad dir');
-  const cfCmd = path.join(__dirname, 'cf.cmd'); // 全路径，不依赖 PATH（浮窗进程的环境可能是旧 PATH）
-  // 浮窗是 GUI 程序、没有控制台，Windows 会给控制台子进程自动分配新窗口，
-  // 所以直接 spawn 即可。不要走 cmd 的 start（这台机器上 start 拉起 .cmd 不稳定），
-  // 也不要 detached（实测 detached 的控制台子进程会静默吞掉脚本不执行）。
+  // 调试后门：设了 CLAUDE_FLOAT_SPAWN_CMD 就改拉别的 payload（排查 spawn 问题时用），正常运行永远走 cf.cmd
+  const cfCmd = process.env.CLAUDE_FLOAT_SPAWN_CMD || path.join(__dirname, 'cf.cmd'); // 全路径，不依赖 PATH（浮窗进程的环境可能是旧 PATH）
+  // 浮窗是 GUI 程序、没有控制台。直接 spawn 控制台子进程时 Windows 会分一个新窗口，
+  // 但子进程拿到的是空 stdio 句柄（Node stdio:'ignore' 不传真实控制台句柄），claude 检测不到
+  // TTY 会以为自己在 --print 管道模式，报 "Input must be provided..." 秒退（2026-10 排查过的坑）。
+  // 所以经 wscript 跳板走 ShellExecute，系统会给新控制台分配真实控制台句柄。
+  // 也不要用 detached（实测静默吞脚本）或 cmd 的 start（这台机器上拉起 .cmd 不稳定）。
   // /k 让 claude 退出后窗口留在提示符，方便回看记录。
-  spawn('C:\\Windows\\System32\\cmd.exe', ['/k', cfCmd], { cwd: target.path, stdio: 'ignore' }).unref();
+  const hop = path.join(__dirname, 'spawn-cf.vbs');
+  spawn('C:\\Windows\\System32\\wscript.exe', [hop, target.path, cfCmd], { stdio: 'ignore' }).unref();
   return { ok: true, name: target.name };
 });
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);

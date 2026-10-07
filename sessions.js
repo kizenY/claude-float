@@ -207,7 +207,9 @@ function liveIndex() {
 function channelIndex() {
   const index = new Map();
   for (const c of readJsonDir(CHANNEL_ROOT, (n) => n.endsWith('.json'))) {
-    if (c.channel && c.sessionId && c.port && c.token && alive(c.serverPid)) index.set(c.sessionId, { port: c.port, token: c.token });
+    if (c.channel && c.sessionId && c.port && c.token && alive(c.serverPid)) {
+      index.set(c.sessionId, { port: c.port, token: c.token, cwd: c.cwd || '', updatedAt: c.updatedAt || 0 });
+    }
   }
   return index;
 }
@@ -236,13 +238,29 @@ function list(limit = 20) {
   const channels = channelIndex();
   const now = Date.now();
   const out = [];
+  // 先占位：活着的频道会话排最前。刚用 cf 起的新会话第一条消息前没有 jsonl 文件，
+  // 不占位的话点了启动按钮列表里什么都看不到
+  for (const [sid, ch] of channels) {
+    const l = live.get(sid);
+    out.push({
+      id: sid,
+      file: '',
+      mtime: ch.updatedAt || now,
+      title: '(新会话)',
+      channel: true,
+      project: ch.cwd ? path.basename(ch.cwd) : '',
+      status: (l && LIVE_STATUS[l.status]) || 'idle',
+      waitingFor: l && l.status === 'waiting' ? l.waitingFor || '' : '',
+      preview: '',
+    });
+  }
   for (const f of files) {
     if (out.length >= limit) break;
     let info;
     try { info = inspect(f.file, f.stat); } catch { continue; }
     if (!info.reply && !channels.has(f.id)) continue; // 没有任何回复的会话不展示，除非能从浮窗直接发消息
     const l = live.get(f.id);
-    out.push({
+    const row = {
       id: f.id,
       file: f.file,
       mtime: f.stat.mtimeMs,
@@ -253,7 +271,10 @@ function list(limit = 20) {
       status: (l && LIVE_STATUS[l.status]) || statusOf(info.tail, f.stat.mtimeMs, now),
       waitingFor: l && l.status === 'waiting' ? l.waitingFor || '' : '',
       preview: info.reply.replace(/\s+/g, ' ').slice(0, 120),
-    });
+    };
+    // 同一个会话已经占过位（文件比频道登记晚落盘）——换成有内容的完整行
+    const at = out.findIndex((o) => o.id === f.id);
+    if (at >= 0) out[at] = row; else out.push(row);
   }
   return out;
 }

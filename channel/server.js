@@ -20,7 +20,27 @@ function debug(...a) {
     fs.appendFileSync(DEBUG_FILE, `${new Date().toISOString()} ${a.join(' ')}\n`);
   } catch { /* 日志失败不影响主流程 */ }
 }
-debug('server start pid', process.pid, 'ppid', process.ppid);
+debug('server start pid', process.pid, 'ppid', process.ppid,
+  '| channel env =', JSON.stringify(process.env.CLAUDE_FLOAT_CHANNEL),
+  '| claude-ish env keys =', Object.keys(process.env).filter((k) => /CLAUDE|CHANNEL/i.test(k)).join(','));
+
+// 判定频道模式：claude 给 MCP 子进程发的是精选环境变量，cf.cmd 里 set 的
+// CLAUDE_FLOAT_CHANNEL 传不到这里（2026-10 实测，debug 日志里 channel env 为空），
+// 所以直接读父进程 claude 的命令行，看是不是 --channels 拉起的。也兼容旧的
+// --dangerously-load-development-channels 手动启动方式。
+function detectChannelMode() {
+  if (process.env.CLAUDE_FLOAT_CHANNEL === '1') return true;
+  try {
+    const { execSync } = require('child_process');
+    const out = execSync(
+      `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${process.ppid}').CommandLine"`,
+      { timeout: 5000, windowsHide: true },
+    ).toString();
+    return /--channels|--dangerously-load-development-channels/.test(out);
+  } catch (e) { debug('channel mode detect failed:', String(e.message || e)); return false; }
+}
+const CHANNEL_MODE = detectChannelMode();
+debug('channel mode =', CHANNEL_MODE);
 
 const SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions');
 const REG_FILE = path.join(REG_DIR, `${process.pid}.json`);
@@ -46,7 +66,7 @@ let lastWritten = '';
 function writeRegistration() {
   const s = currentSession();
   if (!s || !port) return;
-  const reg = JSON.stringify({ ...s, port, token: TOKEN, serverPid: process.pid, channel: process.env.CLAUDE_FLOAT_CHANNEL === '1', updatedAt: Date.now() });
+  const reg = JSON.stringify({ ...s, port, token: TOKEN, serverPid: process.pid, channel: CHANNEL_MODE, updatedAt: Date.now() });
   const key = `${s.sessionId}:${port}`;
   if (key === lastWritten) return;
   fs.mkdirSync(REG_DIR, { recursive: true });
@@ -116,7 +136,8 @@ async function main() {
   if (origInit) {
     mcp.setRequestHandler(InitializeRequestSchema, async (req, extra) => {
       debug('initialize requested: protocolVersion =', req.params && req.params.protocolVersion,
-        '| clientInfo =', JSON.stringify(req.params && req.params.clientInfo));
+        '| clientInfo =', JSON.stringify(req.params && req.params.clientInfo),
+        '| client capabilities =', JSON.stringify(req.params && req.params.capabilities));
       const result = await origInit(req, extra);
       debug('initialize negotiated: protocolVersion =', result && result.protocolVersion,
         '| server capabilities =', JSON.stringify(result && result.capabilities));
