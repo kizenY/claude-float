@@ -31,11 +31,17 @@ debug('server start pid', process.pid, 'ppid', process.ppid,
 function detectChannelMode() {
   if (process.env.CLAUDE_FLOAT_CHANNEL === '1') return true;
   try {
-    const { execSync } = require('child_process');
-    const out = execSync(
-      `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${process.ppid}').CommandLine"`,
-      { timeout: 5000, windowsHide: true },
+    const { execFileSync } = require('child_process');
+    // -EncodedCommand(base64) 走 argv 数组，避开 Windows 引号嵌套地狱；
+    // powershell 必须用绝对路径（裸名字在 node 子进程里会掉进交互模式）
+    const script = `(Get-CimInstance Win32_Process -Filter "ProcessId=${process.ppid}").CommandLine`;
+    const b64 = Buffer.from(script, 'utf16le').toString('base64');
+    const out = execFileSync(
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      ['-NoProfile', '-EncodedCommand', b64],
+      { timeout: 8000, windowsHide: true },
     ).toString();
+    debug('parent cmdline =', out.trim().slice(0, 200));
     return /--channels|--dangerously-load-development-channels/.test(out);
   } catch (e) { debug('channel mode detect failed:', String(e.message || e)); return false; }
 }
