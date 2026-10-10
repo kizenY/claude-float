@@ -12,4 +12,6 @@ contextBridge.exposeInMainWorld('api', {
   quickDirs: () => ipcRenderer.invoke('dirs:list'),
   spawnCf: (dir) => ipcRenderer.invoke('session:spawn', dir),
   send: (id, text) => ipcRenderer.invoke('sessions:send', { id, text }),
+  focus: (id) => ipcRenderer.invoke('session:focus', id),
+  setFocusable: (on) => ipcRenderer.invoke('win:focusable', on),
 });

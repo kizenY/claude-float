@@ -196,7 +196,7 @@ function readJsonDir(dir, filter) {
 function liveIndex() {
   const index = new Map();
   for (const s of readJsonDir(LIVE_ROOT, (n) => /^\d+\.json$/.test(n))) {
-    if (s.sessionId && s.pid && alive(s.pid)) index.set(s.sessionId, { status: s.status, waitingFor: s.waitingFor });
+    if (s.sessionId && s.pid && alive(s.pid)) index.set(s.sessionId, { status: s.status, waitingFor: s.waitingFor, pid: s.pid });
   }
   return index;
 }
@@ -249,7 +249,9 @@ function list(limit = 20) {
       title: '(新会话)',
       channel: true,
       project: ch.cwd ? path.basename(ch.cwd) : '',
+      cwd: ch.cwd || '',
       status: (l && LIVE_STATUS[l.status]) || 'idle',
+      pid: l ? l.pid : null,
       waitingFor: l && l.status === 'waiting' ? l.waitingFor || '' : '',
       preview: '',
     });
@@ -267,8 +269,10 @@ function list(limit = 20) {
       title: info.title,
       channel: channels.has(f.id), // 用 cf 启动、带浮窗频道的会话，可以直接回复
       project: info.cwd ? path.basename(info.cwd) : '',
+      cwd: info.cwd || '', // 会话的原始工作目录，点行恢复（resume）时新终端回到这里
       // 会话还在跑就用 Claude Code 自己报的状态，否则从会话记录推测
       status: (l && LIVE_STATUS[l.status]) || statusOf(info.tail, f.stat.mtimeMs, now),
+      pid: l ? l.pid : null,
       waitingFor: l && l.status === 'waiting' ? l.waitingFor || '' : '',
       preview: info.reply.replace(/\s+/g, ' ').slice(0, 120),
     };
@@ -288,4 +292,10 @@ function channelFor(id) {
   return channelIndex().get(id) || null;
 }
 
-module.exports = { list, reply, parse, statusOf, channelFor, ROOT };
+// 会话对应的活进程 pid（切窗口用），会话已结束则为 null
+function pidFor(id) {
+  const l = liveIndex().get(id);
+  return l ? l.pid : null;
+}
+
+module.exports = { list, reply, parse, statusOf, channelFor, pidFor, ROOT };

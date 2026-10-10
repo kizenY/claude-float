@@ -1,8 +1,14 @@
 {
   "name": "claude-float",
   "version": "0.1.0",
-  "description": "置顶小浮窗：列出本机 Claude 会话，点击朗读最新回复",
+  "description": "置顶小浮窗：列出本机 Claude Code 会话，状态一览、朗读最新回复、浮窗里直接回复",
   "main": "main.js",
+  "license": "MIT",
+  "author": "kizenY",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kizenY/claude-float.git"
+  },
   "private": true,
   "scripts": {
     "start": "electron .",

@@ -47,7 +47,7 @@ function render() {
       + (s.id === speakingId ? ' speaking' : '')
       + (s.status === 'waiting' ? ' waiting' : '')
       + (replyTo && s.id === replyTo.id ? ' replying' : '');
-    li.title = s.channel ? '点击快速回复' : '用 cf 启动的会话才能直接回复（这个不行）';
+    li.title = s.pid ? '点击切换到会话窗口' : '会话已结束，点击新开终端并恢复';
 
     const title = document.createElement('div');
     title.className = 'title';
@@ -70,12 +70,12 @@ function render() {
     meta.append(time);
     const speaking = s.id === speakingId;
     meta.append(rowButton(speaking ? STOP_ICON : SPEAK_ICON, speaking ? '停止朗读' : '朗读最新回复', () => toggleSpeak(s)));
-    const replyBtn = rowButton(REPLY_ICON, s.channel ? '快速回复' : '这个会话不是用 cf 启动的，没法直接回复', () => {
-      if (s.channel) openComposer(s);
-      else flash('用 cf 启动 claude，才能从这里直接回复');
+    const replyBtn = rowButton(REPLY_ICON, s.channel || s.pid ? '快速回复' : '这个会话已经结束了，没法直接回复', () => {
+      if (s.channel || s.pid) openComposer(s);
+      else flash('会话已经结束，没法回复');
     });
     replyBtn.classList.add('reply-btn');
-    if (!s.channel) replyBtn.classList.add('off');
+    if (!s.channel && !s.pid) replyBtn.classList.add('off');
     meta.append(replyBtn);
 
     const preview = document.createElement('div');
@@ -89,20 +89,61 @@ function render() {
     preview.append(s.preview || (s.channel ? '新会话，可以直接从这里发第一条消息' : ''));
 
     li.append(title, meta, preview);
-    li.addEventListener('click', () => {
-      if (s.channel) openComposer(s);
-      else flash('用 cf 启动 claude，才能从这里直接回复');
-    });
+    li.addEventListener('click', () => focusSession(s));
     return li;
   }));
 }
 
+// ---- 完成提示音：会话从「进行中」变「空闲/等待回复」时叮一声 ----
+const lastStatus = new Map();
+let statusPrimed = false;
+let audioCtx = null;
+
+function ding() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const t0 = audioCtx.currentTime;
+    [[880, 0, 0.12], [1318.5, 0.1, 0.22]].forEach(([freq, delay, dur]) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, t0 + delay);
+      gain.gain.linearRampToValueAtTime(0.18, t0 + delay + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + delay + dur);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0 + delay);
+      osc.stop(t0 + delay + dur + 0.05);
+    });
+  } catch (e) { console.error('ding', e); }
+}
+
 async function refresh() {
   try {
-    sessions = await window.api.list(20);
+    const fresh = await window.api.list(20);
+    // 第一轮只建基线，不把存量会话当「刚完成」
+    const finished = statusPrimed && fresh.some((s) =>
+      lastStatus.get(s.id) === 'working' && (s.status === 'idle' || s.status === 'waiting'));
+    lastStatus.clear();
+    for (const s of fresh) lastStatus.set(s.id, s.status);
+    statusPrimed = true;
+    sessions = fresh;
     render();
+    if (finished) ding();
   } catch (e) {
     console.error(e);
+  }
+}
+
+// 点列表项：有窗口就切到会话的终端前台/后台；会话已结束则新开终端恢复它（快捷回复走 ↩ 按钮，不走这里）
+async function focusSession(s) {
+  try {
+    const res = await window.api.focus(s.id);
+    if (!res.ok) flash(res.message || '没找到会话的窗口');
+    else if (res.resumed) flash('已在新终端恢复这个会话');
+  } catch (e) {
+    flash(`切换失败：${String(e.message || e)}`);
   }
 }
 
@@ -276,12 +317,14 @@ function setComposerStatus(text, kind = '') {
   el.className = 'composer-status' + (kind ? ` ${kind}` : '');
 }
 
-function openComposer(s) {
+async function openComposer(s) {
   replyTo = s;
   $('composer').hidden = false;
   $('composer-title').textContent = s.title;
   setComposerStatus(s.status === 'working' ? 'Claude 还在干活，消息会排队' : '');
   render();
+  // 浮窗平时不可聚焦（点列表行不抢前台），要打字了才临时恢复
+  await window.api.setFocusable(true);
   $('composer-input').focus();
 }
 
@@ -290,6 +333,7 @@ function closeComposer() {
   replyTo = null;
   $('composer').hidden = true;
   $('composer-input').value = '';
+  window.api.setFocusable(false);
   render();
 }
 

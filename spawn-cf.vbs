@@ -1,10 +1,17 @@
-' spawn-cf.vbs <å·¥ä½œç›®å½•> <cf.cmd è·¯å¾„>
-' æµ®çª—ï¼ˆGUI ç¨‹åºï¼‰ç›´æ¥ spawn æ§åˆ¶å°å­è¿›ç¨‹æ—¶ï¼ŒWindows ä¼šåˆ†æ–°çª—å£ä½†å­è¿›ç¨‹æ‹¿åˆ°çš„æ˜¯
-' ç©º stdio å¥æŸ„ï¼ˆNode å¿½ç•¥ stdio æ—¶ä¸ä¼ çœŸå®æ§åˆ¶å°å¥æŸ„ï¼‰ï¼Œclaude æ£€æµ‹ä¸åˆ° TTYï¼Œ
-' ä¼šä»¥ä¸ºè‡ªå·±åœ¨ --print ç®¡é“æ¨¡å¼ï¼ŒæŠ¥ "Input must be provided..." ç§’é€€ã€‚
-' ç» WScript.Shell.Run èµ° ShellExecuteï¼Œç³»ç»ŸæŒ‰è§„èŒƒç»™æ–°æ§åˆ¶å°åˆ†é…çœŸå®æ§åˆ¶å°å¥æŸ„ï¼Œ
-' claude æ‰èƒ½æ­£å¸¸è¿›å…¥äº¤äº’æ¨¡å¼ã€‚wscript èµ·å®Œå³é€€ï¼Œcmd çª—å£ç‹¬ç«‹å­˜æ´»ã€‚
-Dim sh
+' spawn-cf.vbs <¹¤×÷Ä¿Â¼> <cf.cmd Â·¾¶> [¸½¼Ó²ÎÊı]
+' ¸¡´°£¨GUI ³ÌĞò£©Ö±½Ó spawn ¿ØÖÆÌ¨×Ó½ø³ÌÊ±£¬Windows »á·ÖĞÂ´°¿Úµ«×Ó½ø³ÌÄÃµ½µÄÊÇ
+' ¿Õ stdio ¾ä±ú£¨Node ºöÂÔ stdio Ê±²»´«ÕæÊµ¿ØÖÆÌ¨¾ä±ú£©£¬claude ¼ì²â²»µ½ TTY£¬
+' »áÒÔÎª×Ô¼ºÔÚ --print ¹ÜµÀÄ£Ê½£¬±¨ "Input must be provided..." ÃëÍË¡£
+' ¾­ WScript.Shell.Run ×ß ShellExecute£¬ÏµÍ³°´¹æ·¶¸øĞÂ¿ØÖÆÌ¨·ÖÅäÕæÊµ¿ØÖÆÌ¨¾ä±ú£¬
+' claude ²ÅÄÜÕı³£½øÈë½»»¥Ä£Ê½¡£wscript ÆğÍê¼´ÍË£¬ÖÕ¶Ë´°¿Ú¶ÀÁ¢´æ»î¡£
+Dim sh, extra, ps
 Set sh = CreateObject("WScript.Shell")
 sh.CurrentDirectory = WScript.Arguments(0)
-sh.Run "cmd /k """ & WScript.Arguments(1) & """", 1, False
+extra = ""
+If WScript.Arguments.Count > 2 Then extra = " " & WScript.Arguments(2)
+' Í³Ò»ÓÃ powershell Æğ£¨Ô­À´ÓÃ cmd /k£©£º-NoExit ³Ğ½Ó¡¸claude ÍË³öºó´°¿ÚÁôÔÚÌáÊ¾·û¡¹µÄÓïÒå¡£
+' ÓÃÈ«Â·¾¶²»ÒÀÀµ PATH£¨¸¡´°½ø³ÌµÄ»·¾³¿ÉÄÜÊÇ¾É PATH£©£»cf.cmd Â·¾¶ÓÃ PS µ¥ÒıºÅ×ÖÃæÁ¿°ü×¡£¬
+' ²»ÅÂ¿Õ¸ñ£»¸½¼Ó²ÎÊıÓÉ main.js Æ´ºÃ£¨ĞÎÈç --resume <uuid>£¬UUID ÎŞ¿Õ¸ñÎŞÌØÊâ×Ö·û£¬¿ÉÂãÆ´£©¡£
+ps = sh.ExpandEnvironmentStrings("%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe")
+sh.Run """" & ps & """ -NoProfile -NoExit -ExecutionPolicy Bypass -Command ""& '" & _
+  WScript.Arguments(1) & "'" & extra & """", 1, False
