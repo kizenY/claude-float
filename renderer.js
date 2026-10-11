@@ -3,10 +3,15 @@ const listEl = $('list');
 const synth = window.speechSynthesis;
 
 const settings = (() => {
-  const defaults = { rate: 1.1, voice: 'edge:zh-CN-XiaoxiaoNeural' };
+  const defaults = { rate: 1.1, voice: 'edge:zh-CN-XiaoxiaoNeural', mode: 'claude' };
   try {
     const saved = JSON.parse(localStorage.getItem('settings') || '{}');
-    return { ...defaults, rate: saved.rate || defaults.rate, voice: saved.voice || defaults.voice };
+    return {
+      ...defaults,
+      rate: saved.rate || defaults.rate,
+      voice: saved.voice || defaults.voice,
+      mode: saved.mode === 'codex' ? 'codex' : 'claude',
+    };
   } catch { return defaults; }
 })();
 function saveSettings() {
@@ -17,6 +22,37 @@ let sessions = [];
 let speakingId = null;
 let speakToken = 0;
 let replyTo = null; // 正在回复的会话
+
+// ---- 形态切换：Claude Code / Codex，一键换列表、换主题色、换启动命令 ----
+let mode = settings.mode;
+const MODES = {
+  claude: { title: 'Claude 播报', agent: 'Claude', launch: 'cf' },
+  codex: { title: 'Codex 播报', agent: 'Codex', launch: 'codex' },
+};
+const modeInfo = () => MODES[mode] || MODES.claude;
+
+function applyMode() {
+  const info = modeInfo();
+  document.body.classList.toggle('codex', mode === 'codex');
+  document.title = info.title;
+  $('brand-name').textContent = info.title;
+  $('mode-claude').classList.toggle('on', mode === 'claude');
+  $('mode-codex').classList.toggle('on', mode === 'codex');
+}
+
+function setMode(next) {
+  if (next === mode) return;
+  mode = next;
+  settings.mode = mode;
+  saveSettings();
+  stop();          // 换形态后别接着读上一个工具的回复
+  closeComposer();
+  lastStatus.clear();
+  statusPrimed = false; // 别把切换当完成，误叮一声
+  applyMode();
+  renderQuickDirs(quickDirList);
+  refresh();
+}
 
 function ago(ms) {
   const s = Math.max(0, (Date.now() - ms) / 1000);
@@ -41,6 +77,9 @@ function rowButton(icon, title, onClick) {
 
 function render() {
   $('empty').hidden = sessions.length > 0;
+  $('empty').textContent = mode === 'codex'
+    ? '还没有找到 Codex 会话记录（在终端跑一次 codex 就有了）'
+    : '还没有找到会话记录';
   listEl.replaceChildren(...sessions.map((s) => {
     const li = document.createElement('li');
     li.className = 'item'
@@ -63,14 +102,17 @@ function render() {
       time.innerHTML = '<span class="chip working">进行中</span>';
     } else if (s.status === 'waiting') {
       time.innerHTML = '<span class="chip waiting">等待回复</span>';
-      time.title = s.waitingFor ? `Claude 在等你：${s.waitingFor}` : 'Claude 在等你：提问、确认计划或批准操作';
+      time.title = s.waitingFor ? `${modeInfo().agent} 在等你：${s.waitingFor}` : `${modeInfo().agent} 在等你：提问、确认计划或批准操作`;
     } else {
       time.textContent = ago(s.mtime);
     }
     meta.append(time);
     const speaking = s.id === speakingId;
     meta.append(rowButton(speaking ? STOP_ICON : SPEAK_ICON, speaking ? '停止朗读' : '朗读最新回复', () => toggleSpeak(s)));
-    const replyBtn = rowButton(REPLY_ICON, s.channel || s.pid ? '快速回复' : '这个会话已经结束了，没法直接回复', () => {
+    const replyOffHint = mode === 'codex'
+      ? '这个 Codex 会话没在终端里跑，点列表行恢复后再回'
+      : '这个会话已经结束了，没法直接回复';
+    const replyBtn = rowButton(REPLY_ICON, s.channel || s.pid ? '快速回复' : replyOffHint, () => {
       if (s.channel || s.pid) openComposer(s);
       else flash('会话已经结束，没法回复');
     });
@@ -121,7 +163,7 @@ function ding() {
 
 async function refresh() {
   try {
-    const fresh = await window.api.list(20);
+    const fresh = await window.api.list(20, mode);
     // 第一轮只建基线，不把存量会话当「刚完成」
     const finished = statusPrimed && fresh.some((s) =>
       lastStatus.get(s.id) === 'working' && (s.status === 'idle' || s.status === 'waiting'));
@@ -139,7 +181,7 @@ async function refresh() {
 // 点列表项：有窗口就切到会话的终端前台/后台；会话已结束则新开终端恢复它（快捷回复走 ↩ 按钮，不走这里）
 async function focusSession(s) {
   try {
-    const res = await window.api.focus(s.id);
+    const res = await window.api.focus(s.id, mode);
     if (!res.ok) flash(res.message || '没找到会话的窗口');
     else if (res.resumed) flash('已在新终端恢复这个会话');
   } catch (e) {
@@ -254,7 +296,7 @@ async function toggleSpeak(s) {
 
   let text;
   try {
-    text = s.file ? window.SpeechText.toSpeech(await window.api.reply(s.file)) : '';
+    text = s.file ? window.SpeechText.toSpeech(await window.api.reply(s.file, mode)) : '';
   } catch (e) {
     console.error(e);
     text = '读取会话失败。';
@@ -321,7 +363,7 @@ async function openComposer(s) {
   replyTo = s;
   $('composer').hidden = false;
   $('composer-title').textContent = s.title;
-  setComposerStatus(s.status === 'working' ? 'Claude 还在干活，消息会排队' : '');
+  setComposerStatus(s.status === 'working' ? `${modeInfo().agent} 还在干活，消息会排队` : '');
   render();
   // 浮窗平时不可聚焦（点列表行不抢前台），要打字了才临时恢复
   await window.api.setFocusable(true);
@@ -342,10 +384,10 @@ async function sendReply() {
   if (!replyTo || !text || sending) return;
   sending = true;
   $('composer-send').disabled = true;
-  setComposerStatus('正在发送到 Claude…');
+  setComposerStatus(`正在发送到 ${modeInfo().agent}…`);
   let res;
   try {
-    res = await window.api.send(replyTo.id, text);
+    res = await window.api.send(replyTo.id, text, mode);
   } catch (e) {
     res = { ok: false, message: String(e.message || e) };
   }
@@ -370,17 +412,18 @@ $('composer-input').addEventListener('keydown', (e) => {
 
 $('btn-close').addEventListener('click', () => window.api.hide());
 
-// ---- 快捷启动：一键在常用目录起 cf 会话 ----
+// ---- 快捷启动：一键在常用目录起一个会话（Claude 形态走 cf，Codex 形态走 codex） ----
+let quickDirList = [];
 function renderQuickDirs(dirs) {
   $('launch').replaceChildren(...dirs.map((d) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = `+ ${d.name}`;
-    btn.title = `在 ${d.path} 启动 cf 会话`;
+    btn.title = `在 ${d.path} 启动 ${modeInfo().launch} 会话`;
     btn.addEventListener('click', async () => {
       try {
-        const res = await window.api.spawnCf(d.path);
-        flash(`已从 ${res.name} 启动 cf 会话`);
+        const res = await window.api.spawn(d.path, mode);
+        flash(`已从 ${res.name} 启动 ${modeInfo().launch} 会话`);
       } catch (e) {
         flash(`启动失败：${String(e.message || e)}`);
       }
@@ -388,7 +431,11 @@ function renderQuickDirs(dirs) {
     return btn;
   }));
 }
-window.api.quickDirs().then(renderQuickDirs).catch(() => {});
+window.api.quickDirs().then((dirs) => { quickDirList = dirs; renderQuickDirs(dirs); }).catch(() => {});
+
+// ---- 形态切换按钮 ----
+$('mode-claude').addEventListener('click', () => setMode('claude'));
+$('mode-codex').addEventListener('click', () => setMode('codex'));
 
 $('btn-collapse').addEventListener('click', async () => {
   const collapsed = await window.api.toggleCollapse();
@@ -403,5 +450,6 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') stop(); })
 synth.onvoiceschanged = fillVoices;
 window.api.edgeVoices().then((v) => { edgeVoices = v; fillVoices(); });
 fillVoices();
+applyMode();
 refresh();
 setInterval(refresh, 3000);

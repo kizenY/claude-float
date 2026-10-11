@@ -4,7 +4,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Built with](https://img.shields.io/badge/built%20with-Electron-47848f)
 
-Windows 上一个置顶的小浮窗，给 **Claude Code**（命令行）用：会话状态一览、朗读最新回复、不用切窗口直接回复。
+Windows 上一个置顶的小浮窗，给 **Claude Code / Codex**（命令行）用：会话状态一览、朗读最新回复、不用切窗口直接回复。
 
 <p align="center"><img src="docs/screenshot.png" width="320" alt="claude-float 截图"></p>
 
@@ -18,6 +18,7 @@ Claude Code 跑在终端里，看一眼它说完没有、回一句话，都得�
 
 ## 功能
 
+- **Claude / Codex 一键切换** —— 标题栏的开关一键换形态：会话列表、主题色、快捷启动命令、回复通道整套跟着切
 - **会话列表**：读 `~/.claude/projects/*/*.jsonl`（只读），列出最近会话
 - **状态标注**：每个会话显示 **进行中**（Claude 在干活）/ **等待回复**（Claude 在问你、等你确认计划，多半在等你批准）/ 最后一条回复是多久之前。状态优先用 Claude Code 自己写的 `~/.claude/sessions/<pid>.json`，会话没在跑时才从会话记录推测
 - **点会话那一行**：
@@ -29,9 +30,18 @@ Claude Code 跑在终端里，看一眼它说完没有、回一句话，都得�
 - **窗口**：图钉置顶 · 横线收起成一条 · 叉隐藏到托盘；位置、大小、置顶状态会记住。托盘图标（橙色圆点）单击显示/隐藏，右键菜单可开关「开机自动运行」（默认关）和退出
 - **语音**：默认在线神经语音（和 Edge「大声朗读」同一套，晓晓 / 云希等，接近真人），连不上自动降级系统离线语音
 
+### Codex 形态
+
+同一个浮窗，指向 Codex CLI 的会话记录（`~/.codex/sessions/**/rollout-*.jsonl`，只读，支持 `CODEX_HOME`）：
+
+- **会话列表 + 状态**：Codex 没有活会话登记表，状态（进行中 / 等你批准 / 空闲）从记录尾部推断，思路和 Claude 的降级路径一致
+- **点会话那一行**：还在跑 → 切换它的终端前台/后台；已结束 → 在原目录新开 PowerShell 跑 `codex resume <id>`
+- **快速回复**：Codex 没有 channels 等价物；会话还开在终端里时，直接用 `WriteConsoleInputW` 往它的控制台打字（不抢焦点、不碰剪贴板）。会话和进程靠「rollout 里的会话启动时间 ≈ codex 进程启动时间」（±20 秒）匹配；从 Codex 桌面端起的会话没有控制台，没法直接回，点行恢复即可
+- **快捷启动**：底部按钮在常用目录起 `codex`
+
 ## 快速开始
 
-**前提**：Windows 10/11，Node.js 20+，[Claude Code CLI](https://docs.claude.com/en/docs/claude-code/overview) 已装好且终端里能用。
+**前提**：Windows 10/11，Node.js 20+，[Claude Code CLI](https://docs.claude.com/en/docs/claude-code/overview) 已装好且终端里能用；要用 Codex 形态再装 [Codex CLI](https://developers.openai.com/codex/)（可选）。
 
 ```bash
 git clone https://github.com/kizenY/claude-float.git
@@ -75,8 +85,10 @@ cf [任何 claude 参数]
 | 变量 | 作用 |
 |---|---|
 | `CLAUDE_FLOAT_PROJECTS` | 逗号分隔的关键字，只显示项目目录名包含这些关键字的会话，如 `pawkit,lab` |
+| `CLAUDE_FLOAT_CODEX_EXCLUDE` | Codex 形态：逗号分隔的关键字，工作目录命中即隐藏。默认 `e:\agent-cluster`（同一台机器上其他 Agent 共用 `~/.codex/sessions`，不串台） |
 | `CLAUDE_FLOAT_SPAWN_CMD` | 调试：快捷启动改拉这个命令，排查 spawn 问题时用 |
 | `CLAUDE_FLOAT_SNAPSHOT` | 调试：启动后截图到该路径 |
+| `CLAUDE_FLOAT_QUIT_AFTER_SNAPSHOT` | 调试：截图完自动退出（脚本化 smoke 用） |
 
 ### 语音
 
@@ -96,6 +108,8 @@ cf [任何 claude 参数]
 | `cf` 启动时弹开发频道警告 | 每个会话一次，正常现象；选「I am using this for local development」 |
 | 回复发出去 Claude 没反应 | 对一下 Claude Code 版本是否中了 [issue #44181](https://github.com/anthropics/claude-code/issues/44181)；浮窗会降级到控制台注入，前提是那个会话的终端窗口还在 |
 | 列表里没有会话 | 浮窗读 `~/.claude/projects/*/*.jsonl`——确认至少跑过一次 `claude`，再检查 `CLAUDE_FLOAT_PROJECTS` 是不是把会话全过滤掉了 |
+| Codex 回复按钮是半透明的 | 这个 Codex 会话已经不在终端里跑了（或是桌面端起的）。点列表行 `codex resume` 恢复后再回 |
+| Codex 列表里没有会话 | 确认至少跑过一次 `codex`；再检查 `CLAUDE_FLOAT_CODEX_EXCLUDE` / `CLAUDE_FLOAT_PROJECTS` 是不是把会话过滤掉了 |
 | 在线语音突然不响 | 非官方接口失效或被墙；浮窗会自动降级系统语音。走了代理的检查 `HTTPS_PROXY` |
 | 浮窗不见了 | 找橙色托盘图标，单击切换显示/隐藏 |
 
@@ -110,6 +124,7 @@ npm start       # 起浮窗
 main.js             Electron 主进程：窗口、托盘、IPC
 renderer.js         浮窗 UI 与朗读调度
 sessions.js         读 ~/.claude/projects 会话记录 + 状态推测
+codex-sessions.js   读 ~/.codex/sessions 会话记录 + 状态推测 + 活进程匹配
 channel/server.js   Claude Code 频道 server（快速回复的入口）
 cf.cmd / spawn-cf.vbs / start.vbs   启动脚本（Windows 控制台句柄的几个坑都写在代码注释里）
 ```

@@ -4,7 +4,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Built with](https://img.shields.io/badge/built%20with-Electron-47848f)
 
-An always-on-top floating widget for **Claude Code** (the CLI) on Windows. See all your sessions at a glance, have the latest reply read aloud, and answer Claude without ever leaving your current window.
+An always-on-top floating widget for **Claude Code** and **Codex** (the CLIs) on Windows. See all your sessions at a glance, have the latest reply read aloud, and answer without ever leaving your current window.
 
 <p align="center"><img src="docs/screenshot.png" width="320" alt="claude-float screenshot"></p>
 
@@ -18,6 +18,7 @@ Claude Code runs in a terminal, which means switching windows just to check whet
 
 ## Features
 
+- **Claude / Codex, one click apart** — the header toggle switches the whole widget between the two: session list, theme color, quick-launch command and reply plumbing
 - **Session list** — reads `~/.claude/projects/*/*.jsonl` (read-only), shows your recent sessions
 - **Live status** per session: **Working** / **Waiting for you** (Claude asked a question, plan approval, long-running tool call) / how long ago the last reply came. Prefers the status Claude Code itself writes to `~/.claude/sessions/<pid>.json`; falls back to guessing from the transcript when the session isn't running
 - **Click a row**:
@@ -29,9 +30,18 @@ Claude Code runs in a terminal, which means switching windows just to check whet
 - **Widget niceties** — pin / collapse to a 40px bar / hide to tray; position, size and pinned state are remembered. Tray icon toggles visibility; tray menu has optional "run at login" (off by default)
 - **Text-to-speech**: online neural voices by default (same voices as Edge "Read Aloud" — natural-sounding), or offline system voices as fallback
 
+### Codex mode
+
+The same widget, pointed at Codex CLI sessions (`~/.codex/sessions/**/rollout-*.jsonl`, read-only; honors `CODEX_HOME`):
+
+- **Session list + status** — Codex has no live-session registry, so status (working / waiting for approval / idle) is inferred from the transcript tail, same heuristics spirit as the Claude fallback
+- **Click a row** — live session → focus/minimize its terminal; exited session → fresh PowerShell in the original directory running `codex resume <id>`
+- **Quick reply** — Codex has no channels equivalent; while the session is still running in a terminal, the widget types straight into its console via `WriteConsoleInputW` (no focus steal, no clipboard). A session is matched to its process by comparing the rollout's session-start timestamp with `codex` process start times (±20s); sessions started from the Codex Desktop app have no console and can't be quick-replied — resume them instead
+- **Quick launch** — the bottom buttons start `codex` in your quick-launch directories
+
 ## Quick start
 
-**Prerequisites**: Windows 10/11, Node.js 20+, [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/overview) installed and working in a terminal.
+**Prerequisites**: Windows 10/11, Node.js 20+, [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/overview) installed and working in a terminal. Codex support needs the [Codex CLI](https://developers.openai.com/codex/) on `PATH` (optional).
 
 ```bash
 git clone https://github.com/kizenY/claude-float.git
@@ -75,8 +85,10 @@ Without this file you get a single `home` button. Restart the widget after editi
 | Variable | Purpose |
 |---|---|
 | `CLAUDE_FLOAT_PROJECTS` | Comma-separated keywords; only show sessions whose project directory name matches, e.g. `pawkit,lab` |
+| `CLAUDE_FLOAT_CODEX_EXCLUDE` | Codex mode: comma-separated keywords; hide sessions whose working directory matches. Defaults to the author's `e:\agent-cluster` (other agents on the same machine share `~/.codex/sessions`) |
 | `CLAUDE_FLOAT_SPAWN_CMD` | Debug: launch this instead of `cf.cmd` from quick-launch |
 | `CLAUDE_FLOAT_SNAPSHOT` | Debug: save a screenshot to this path on startup |
+| `CLAUDE_FLOAT_QUIT_AFTER_SNAPSHOT` | Debug: quit right after saving the screenshot (scripted smoke tests) |
 
 ### Voices
 
@@ -96,6 +108,8 @@ If the channel notification doesn't land (some Claude Code versions silently dro
 | A warning about development channels on `cf` launch | Expected once per session; choose "I am using this for local development" |
 | Reply sent but Claude never answers | Check your Claude Code version against [issue #44181](https://github.com/anthropics/claude-code/issues/44181); the widget falls back to console typing, which needs the session's terminal window to still exist |
 | No sessions listed | The widget reads `~/.claude/projects/*/*.jsonl` — make sure you've run `claude` at least once, and check `CLAUDE_FLOAT_PROJECTS` isn't filtering everything out |
+| Codex reply button dimmed | The Codex session isn't running in a terminal anymore (or was started from the Desktop app). Click the row to `codex resume` it, then reply |
+| No Codex sessions listed | Make sure you've run `codex` at least once; check `CLAUDE_FLOAT_CODEX_EXCLUDE` / `CLAUDE_FLOAT_PROJECTS` aren't filtering them out |
 | Online voice stopped working | The unofficial Edge endpoint changed or is blocked; the widget falls back to system voices automatically. Check `HTTPS_PROXY` if you're behind a proxy |
 | Window won't appear | Look for the orange tray icon; single-click toggles visibility |
 
@@ -110,6 +124,7 @@ npm start       # launch the widget
 main.js             Electron main process: window, tray, IPC
 renderer.js         widget UI + speech orchestration
 sessions.js         reads ~/.claude/projects transcripts + status guessing
+codex-sessions.js   reads ~/.codex/sessions rollouts + status guessing + live-process matching
 channel/server.js   Claude Code channel server (quick-reply entry point)
 cf.cmd / spawn-cf.vbs / start.vbs   launchers (several Windows console-handle
                     pitfalls are documented in code comments)

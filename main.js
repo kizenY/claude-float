@@ -1,9 +1,10 @@
 const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, nativeImage } = require('electron');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const sessions = require('./sessions');
+const codex = require('./codex-sessions');
 const edgeTts = require('./edge-tts');
 const reply = require('./reply');
 const focus = require('./focus');
@@ -149,15 +150,20 @@ function snapshot(out) {
     }
     fs.writeFileSync(out, (await win.webContents.capturePage()).toPNG());
     console.log('SNAPSHOT', out);
+    if (process.env.CLAUDE_FLOAT_QUIT_AFTER_SNAPSHOT) app.quit(); // 调试：截图完自动退出，脚本化 smoke 用
   }, 2500));
 }
 
-ipcMain.handle('sessions:list', (_e, limit) => sessions.list(limit));
-ipcMain.handle('sessions:reply', (_e, file) => {
-  // 只允许读 projects 目录里的文件
+ipcMain.handle('sessions:list', async (_e, limit, mode) => {
+  if (mode === 'codex') return codex.attachPids(codex.list(limit));
+  return sessions.list(limit);
+});
+ipcMain.handle('sessions:reply', (_e, file, mode) => {
+  // 只允许读会话记录目录里的文件
+  const root = mode === 'codex' ? codex.ROOT : sessions.ROOT;
   const abs = path.resolve(file);
-  if (!abs.startsWith(path.resolve(sessions.ROOT) + path.sep)) throw new Error('bad path');
-  return sessions.reply(abs);
+  if (!abs.startsWith(path.resolve(root) + path.sep)) throw new Error('bad path');
+  return mode === 'codex' ? codex.reply(abs) : sessions.reply(abs);
 });
 // 有活窗口时的终端发送：先试「控制台注入打字」（不切窗口不抢焦点），
 // 不行了才退到「聚焦 + 粘贴」（会抢一下前台，只在兜底时用）
@@ -190,10 +196,32 @@ async function sendTo(id, text) {
   if (pid) return sendViaPid(pid, text, s.file);
   return { ok: false, message: '这个会话已经结束了，没法回复' };
 }
-ipcMain.handle('sessions:send', (_e, { id, text }) => sendTo(id, text));
-// 点列表项：有活窗口就切到前台（已在前台则最小化）；会话已结束则新开一个 cf 终端
-// 恢复（--resume）它。pid 只从会话登记表里查，renderer 传不进任意 pid
-ipcMain.handle('session:focus', (_e, id) => {
+
+// Codex 没有频道，会话还开在终端里时直接往控制台打字（不抢焦点、不碰剪贴板）
+async function sendToCodex(id, text) {
+  const s = codex.list(200).find((x) => x.id === id);
+  if (!s) return { ok: false, message: '找不到这个会话' };
+  const pid = await codex.pidFor(id);
+  if (!pid) {
+    return { ok: false, message: '这个 Codex 会话没在终端里跑，点列表行用 codex resume 恢复后再回' };
+  }
+  return sendViaPid(pid, text, s.file);
+}
+ipcMain.handle('sessions:send', (_e, { id, text, mode }) => (
+  mode === 'codex' ? sendToCodex(id, text) : sendTo(id, text)
+));
+// 点列表项：有活窗口就切到前台（已在前台则最小化）；会话已结束则新开一个终端
+// 恢复它（Claude 用 cf --resume，Codex 用 codex resume）。pid 只在主进程这边查，
+// renderer 传不进任意 pid
+ipcMain.handle('session:focus', async (_e, id, mode) => {
+  if (mode === 'codex') {
+    const livePid = await codex.pidFor(id);
+    if (livePid) return focus.toPid(livePid);
+    const c = codex.list(200).find((x) => x.id === id);
+    if (!c) return { ok: false, message: '找不到这个会话，没法恢复' };
+    spawnCodexTerminal(c.cwd || os.homedir(), `resume ${c.id}`);
+    return { ok: true, resumed: true };
+  }
   const pid = sessions.pidFor(String(id));
   if (pid) return focus.toPid(pid);
   const s = sessions.list(200).find((x) => x.id === id);
@@ -240,11 +268,29 @@ function spawnCfTerminal(dir, extraArgs = '') {
   if (extraArgs) args.push(extraArgs);
   spawn('C:\\Windows\\System32\\wscript.exe', args, { stdio: 'ignore' }).unref();
 }
-ipcMain.handle('session:spawn', (_e, dir) => {
+
+// ---- Codex 终端：同一个 wscript 跳板，换成 codex 命令 ----
+// 启动时解析一次全路径：浮窗进程的环境可能是旧 PATH，直接写 codex 会找不到
+function resolveCodexCmd() {
+  try {
+    const out = execFileSync('where.exe', ['codex'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return out.split(/\r?\n/).map((s) => s.trim()).find((p) => /\.(cmd|exe)$/i.test(p)) || 'codex';
+  } catch { return 'codex'; }
+}
+const CODEX_CMD = resolveCodexCmd();
+function spawnCodexTerminal(dir, extraArgs = '') {
+  const hop = path.join(__dirname, 'spawn-cf.vbs'); // 通用终端跳板：给新控制台真实句柄
+  const args = [hop, dir, CODEX_CMD];
+  if (extraArgs) args.push(extraArgs);
+  spawn('C:\\Windows\\System32\\wscript.exe', args, { stdio: 'ignore' }).unref();
+}
+
+ipcMain.handle('session:spawn', (_e, dir, mode) => {
   // 只白名单里的目录可以起，防止 renderer 被注入任意路径
   const target = QUICK_DIRS.find((d) => d.path === dir);
   if (!target) throw new Error('bad dir');
-  spawnCfTerminal(target.path);
+  if (mode === 'codex') spawnCodexTerminal(target.path);
+  else spawnCfTerminal(target.path);
   return { ok: true, name: target.name };
 });
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);
