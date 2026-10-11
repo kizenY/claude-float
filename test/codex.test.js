@@ -93,4 +93,19 @@ rollout('00', 'E:\\agent-cluster\\seesaw');
 rollout('01', 'E:\\agent-cluster\\carl');
 assert.deepStrictEqual(codex.list(10).map((r) => r.project).sort(), ['carl', 'demo']);
 
+// ---- 线程标题：桌面端写的 session_index.jsonl（id 是 uuid 前缀）优先于首句提问 ----
+fs.writeFileSync(path.join(HOME, 'session_index.jsonl'),
+  `${JSON.stringify({ id: id.slice(0, 28), thread_name: '官方线程标题', updated_at: '2026-10-11T04:10:00Z' })}\n`, 'utf8');
+const titled = codex.list(10);
+assert.strictEqual(titled.find((r) => r.project === 'demo').title, '官方线程标题');
+assert.strictEqual(titled.find((r) => r.project === 'carl').title, '01 的问题'); // 没进索引的退回首句
+
+// ---- 活进程匹配：方向性窗口（进程先于会话启动，提前量有限）----
+const metaTs = now;
+assert.strictEqual(codex.matchPid(metaTs, [{ pid: process.pid, startMs: metaTs - 2000 }]), process.pid); // 正常启动
+assert.strictEqual(codex.matchPid(metaTs, [{ pid: process.pid, startMs: metaTs - 10 * 60e3 }]), process.pid); // 等信任确认的慢启动
+assert.strictEqual(codex.matchPid(metaTs, [{ pid: process.pid, startMs: metaTs - 20 * 60e3 }]), null); // 太早的不算
+assert.strictEqual(codex.matchPid(metaTs, [{ pid: process.pid, startMs: metaTs + 5000 }]), null); // 会话之后才启动的不算
+assert.strictEqual(codex.matchPid(metaTs, [{ pid: process.pid, startMs: metaTs - 8 * 60e3 }, { pid: process.pid, startMs: metaTs - 10e3 }]), process.pid); // 取最近的
+
 console.log('codex ok');

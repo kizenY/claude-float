@@ -35,8 +35,9 @@ Claude Code 跑在终端里，看一眼它说完没有、回一句话，都得�
 同一个浮窗，指向 Codex CLI 的会话记录（`~/.codex/sessions/**/rollout-*.jsonl`，只读，支持 `CODEX_HOME`）：
 
 - **会话列表 + 状态**：Codex 没有活会话登记表，状态（进行中 / 等你批准 / 空闲）从记录尾部推断，思路和 Claude 的降级路径一致
+- **标题**：优先用桌面端写的官方线程名（`~/.codex/session_index.jsonl`），纯 CLI 会话退回首句提问
 - **点会话那一行**：还在跑 → 切换它的终端前台/后台；已结束 → 在原目录新开 PowerShell 跑 `codex resume <id>`
-- **快速回复**：Codex 没有 channels 等价物；会话还开在终端里时，直接用 `WriteConsoleInputW` 往它的控制台打字（不抢焦点、不碰剪贴板）。会话和进程靠「rollout 里的会话启动时间 ≈ codex 进程启动时间」（±20 秒）匹配；从 Codex 桌面端起的会话没有控制台，没法直接回，点行恢复即可
+- **快速回复**：Codex 没有 channels 等价物；会话还开在终端里时，直接用 `WriteConsoleInputW` 往它的控制台打字（不抢焦点、不碰剪贴板）。会话和进程靠「rollout 里的会话创建时间 ≈ codex 进程启动时间」匹配（进程须先于会话启动、提前量 ≤15 分钟——新目录第一次启动要等信任确认，会慢几分钟）；从 Codex 桌面端起的会话没有控制台，没法直接回，点行恢复即可
 - **快捷启动**：底部按钮在常用目录起 `codex`
 
 ## 快速开始
@@ -110,6 +111,7 @@ cf [任何 claude 参数]
 | 列表里没有会话 | 浮窗读 `~/.claude/projects/*/*.jsonl`——确认至少跑过一次 `claude`，再检查 `CLAUDE_FLOAT_PROJECTS` 是不是把会话全过滤掉了 |
 | Codex 回复按钮是半透明的 | 这个 Codex 会话已经不在终端里跑了（或是桌面端起的）。点列表行 `codex resume` 恢复后再回 |
 | Codex 列表里没有会话 | 确认至少跑过一次 `codex`；再检查 `CLAUDE_FLOAT_CODEX_EXCLUDE` / `CLAUDE_FLOAT_PROJECTS` 是不是把会话过滤掉了 |
+| 新目录起 codex 后列表里一直「没在终端里跑」 | 第一次进新目录 codex 会弹「信任确认」，会话要等你确认后才创建；在终端里确认一次，这个目录以后就正常了 |
 | 在线语音突然不响 | 非官方接口失效或被墙；浮窗会自动降级系统语音。走了代理的检查 `HTTPS_PROXY` |
 | 浮窗不见了 | 找橙色托盘图标，单击切换显示/隐藏 |
 

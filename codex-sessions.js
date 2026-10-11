@@ -12,12 +12,16 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const ROOT = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions');
+// 桌面端维护的线程名索引：~/.codex/session_index.jsonl，每行 { id, thread_name, updated_at }
+// （id 是完整 uuid 的前缀）。有官方名字就用官方名字，没有再退回首句提问。
+const NAME_INDEX = path.join(path.dirname(ROOT), 'session_index.jsonl');
 // 和 sessions.js 一样先只读尾部，找不到回复再逐级放大；会话头单独读文件开头
 const TAIL_STEPS = [512 * 1024, 4 * 1024 * 1024, Infinity];
 const HEAD_BYTES = 256 * 1024;
 
 const cache = new Map();      // file -> { mtimeMs, size, info }
 const metaCache = new Map();  // file -> { mtimeMs, size, meta }
+let nameIndex = null;         // { mtimeMs, map }
 
 // 可选：CLAUDE_FLOAT_PROJECTS=carl,pawkit 只显示工作目录名包含这些关键字的会话
 const ONLY = (process.env.CLAUDE_FLOAT_PROJECTS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -215,6 +219,33 @@ function idFromFile(file) {
   return m ? m[1].toLowerCase() : path.basename(file, '.jsonl');
 }
 
+function threadNames() {
+  try {
+    const stat = fs.statSync(NAME_INDEX);
+    if (nameIndex && nameIndex.mtimeMs === stat.mtimeMs) return nameIndex.map;
+    const map = new Map();
+    for (const line of fs.readFileSync(NAME_INDEX, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const j = JSON.parse(line);
+        if (j.id && j.thread_name) map.set(String(j.id), String(j.thread_name));
+      } catch { /* 写入中的半行 */ }
+    }
+    nameIndex = { mtimeMs: stat.mtimeMs, map };
+    return map;
+  } catch {
+    return nameIndex ? nameIndex.map : new Map(); // 索引文件还没有（纯 CLI 机器）就用会话记录本身
+  }
+}
+
+function titleFor(id, fallback) {
+  const names = threadNames();
+  for (const [k, v] of names) {
+    if (id.startsWith(k)) return v.slice(0, 80);
+  }
+  return fallback;
+}
+
 function list(limit = 20) {
   const files = [];
   for (const file of sessionFiles()) {
@@ -239,11 +270,12 @@ function list(limit = 20) {
     const cwd = info.cwd || (meta && meta.cwd) || '';
     if (excluded(cwd)) continue;
     if (ONLY.length && !ONLY.some((k) => path.basename(cwd).toLowerCase().includes(k))) continue;
+    const id = (meta && (meta.session_id || meta.id)) ? String(meta.session_id || meta.id) : idFromFile(f.file);
     out.push({
-      id: (meta && (meta.session_id || meta.id)) ? String(meta.session_id || meta.id) : idFromFile(f.file),
+      id,
       file: f.file,
       mtime: f.stat.mtimeMs,
-      title: info.title,
+      title: titleFor(id, info.title),
       channel: false, // Codex 没有 Claude Code 的 channels，快速回复走终端注入
       project: cwd ? path.basename(cwd) : '',
       cwd,
@@ -268,6 +300,9 @@ function reply(file) {
 // （UTC、RFC3339），和 codex 进程的启动时间只差加载配置那几秒——枚举本机 codex
 // 进程的启动时间，取差值最小且在窗口内的那个。Desktop 起的会话没有控制台，
 // 直接不参与匹配。
+const MATCH_SKEW = 3000;            // 时钟/落盘顺序误差
+const MATCH_MAX_GAP = 15 * 60e3;    // 新目录第一次启动要等「信任确认」，会话创建可能晚好几分钟
+
 let procs = null;
 let procsAt = 0;
 let procsBusy = null;
@@ -282,10 +317,12 @@ async function codexProcs() {
   procsBusy = new Promise((resolve) => {
     // 输出 "pid<TAB>startMs" 每进程一行，避开 JSON 引号转义。
     // 用 Get-Process 而不是 WMI：不需要 WMI 权限（Get-CimInstance Win32_Process
-    // 在部分机器上会被拒绝访问），自己终端里起的 codex 进程都能看到
-    const script = 'Get-Process -Name codex* -ErrorAction SilentlyContinue | ' +
+    // 在部分机器上会被拒绝访问），自己终端里起的 codex 进程都能看到。
+    // 只取名字恰好是 codex 的进程：codex-computer-use-* 这类同名组件不是会话 TUI
+    const script = 'Get-Process -Name codex -ErrorAction SilentlyContinue | ' +
       'ForEach-Object { $t=$null; try { $t=$_.StartTime } catch {} ; ' +
-      'if ($t) { "{0}`t{1}" -f $_.Id, [DateTimeOffset]::new($t).ToUnixTimeMilliseconds() } }';
+      'if ($t -and -not ($_.Path -match "app-server-daemon|computer-use")) ' +
+      '{ "{0}`t{1}" -f $_.Id, [DateTimeOffset]::new($t).ToUnixTimeMilliseconds() } }';
     const child = spawn('powershell.exe',
       ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script],
       { stdio: ['ignore', 'pipe', 'ignore'] });
@@ -308,9 +345,11 @@ async function codexProcs() {
 
 function matchPid(startedAt, candidates) {
   if (!startedAt) return null;
+  // 方向性窗口：进程必须在会话创建之前启动（+skew），且提前量不超过上限；
+  // 取「会话创建前最近启动」的进程。等信任确认的慢启动也因此能对上
   const hits = candidates
-    .filter((p) => alive(p.pid) && Math.abs(p.startMs - startedAt) <= 20000)
-    .sort((a, b) => Math.abs(a.startMs - startedAt) - Math.abs(b.startMs - startedAt));
+    .filter((p) => alive(p.pid) && p.startMs <= startedAt + MATCH_SKEW && startedAt - p.startMs <= MATCH_MAX_GAP)
+    .sort((a, b) => (startedAt - a.startMs) - (startedAt - b.startMs));
   return hits.length ? hits[0].pid : null;
 }
 
@@ -338,4 +377,4 @@ async function pidFor(id) {
   return null;
 }
 
-module.exports = { list, reply, parse, statusOf, attachPids, pidFor, ROOT };
+module.exports = { list, reply, parse, statusOf, attachPids, pidFor, matchPid, ROOT };

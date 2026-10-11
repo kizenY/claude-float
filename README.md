@@ -35,8 +35,9 @@ Claude Code runs in a terminal, which means switching windows just to check whet
 The same widget, pointed at Codex CLI sessions (`~/.codex/sessions/**/rollout-*.jsonl`, read-only; honors `CODEX_HOME`):
 
 - **Session list + status** — Codex has no live-session registry, so status (working / waiting for approval / idle) is inferred from the transcript tail, same heuristics spirit as the Claude fallback
+- **Titles** — prefers the official thread names the desktop app writes to `~/.codex/session_index.jsonl`; pure-CLI sessions fall back to the first prompt
 - **Click a row** — live session → focus/minimize its terminal; exited session → fresh PowerShell in the original directory running `codex resume <id>`
-- **Quick reply** — Codex has no channels equivalent; while the session is still running in a terminal, the widget types straight into its console via `WriteConsoleInputW` (no focus steal, no clipboard). A session is matched to its process by comparing the rollout's session-start timestamp with `codex` process start times (±20s); sessions started from the Codex Desktop app have no console and can't be quick-replied — resume them instead
+- **Quick reply** — Codex has no channels equivalent; while the session is still running in a terminal, the widget types straight into its console via `WriteConsoleInputW` (no focus steal, no clipboard). A session is matched to its process by comparing the rollout's session-creation timestamp with `codex` process start times (the process must predate the session by ≤15 min — the first launch in a new directory waits on a trust prompt, which delays session creation by minutes); sessions started from the Codex Desktop app have no console and can't be quick-replied — resume them instead
 - **Quick launch** — the bottom buttons start `codex` in your quick-launch directories
 
 ## Quick start
@@ -110,6 +111,7 @@ If the channel notification doesn't land (some Claude Code versions silently dro
 | No sessions listed | The widget reads `~/.claude/projects/*/*.jsonl` — make sure you've run `claude` at least once, and check `CLAUDE_FLOAT_PROJECTS` isn't filtering everything out |
 | Codex reply button dimmed | The Codex session isn't running in a terminal anymore (or was started from the Desktop app). Click the row to `codex resume` it, then reply |
 | No Codex sessions listed | Make sure you've run `codex` at least once; check `CLAUDE_FLOAT_CODEX_EXCLUDE` / `CLAUDE_FLOAT_PROJECTS` aren't filtering them out |
+| Codex session in a new directory shows as "not running" | The first launch in a new directory shows a trust prompt and the session is only created after you confirm. Confirm once in the terminal and the directory works normally from then on |
 | Online voice stopped working | The unofficial Edge endpoint changed or is blocked; the widget falls back to system voices automatically. Check `HTTPS_PROXY` if you're behind a proxy |
 | Window won't appear | Look for the orange tray icon; single-click toggles visibility |
 
