@@ -54,7 +54,7 @@ claude mcp add -s user claude-float -- node <path-to-repo>/channel/server.js   #
 npm start
 ```
 
-For daily use, launch `start.vbs` (no console window flashes). To start it at login, use the tray menu → 「开机自动运行」(writes to `HKCU\...\CurrentVersion\Run`, uncheck to remove).
+For daily use, launch `start.vbs` (no console window flashes). To start it at login, use the tray menu → 「开机自动运行」(writes to `HKCU\...\CurrentVersion\Run`, uncheck to remove). To make the app findable via Win-key search: `powershell -File scripts\start-menu.ps1` (adds a `claude-float` Start Menu shortcut; `-Remove` undoes).
 
 > The `claude mcp add` line registers the channel server at user scope, so every Claude session can load it. Only sessions started via `cf` (below) actually enable the channel — the widget only shows the reply button for those. To unregister: `claude mcp remove claude-float`.
 

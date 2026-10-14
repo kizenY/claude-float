@@ -54,7 +54,7 @@ claude mcp add -s user claude-float -- node <仓库路径>/channel/server.js   #
 npm start
 ```
 
-日常使用双击 `start.vbs`（不弹命令行窗口）。想开机自动打开：托盘菜单勾选「开机自动运行」（写入 `HKCU\...\CurrentVersion\Run`，取消勾选就删掉）。
+日常使用双击 `start.vbs`（不弹命令行窗口）。想开机自动打开：托盘菜单勾选「开机自动运行」（写入 `HKCU\...\CurrentVersion\Run`，取消勾选就删掉）。想让 Win 键搜索找到应用：`powershell -File scripts\start-menu.ps1`（在开始菜单放一个 `claude-float` 快捷方式，`-Remove` 撤销）。
 
 > `claude mcp add` 那行把频道 server 注册到 user scope，所有 claude 会话都会加载它；但只有用 `cf` 启动的会话真正开了频道，浮窗也只给这种会话显示回复按钮。想撤销注册：`claude mcp remove claude-float`。
 
