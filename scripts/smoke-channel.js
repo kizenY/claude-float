@@ -12,23 +12,20 @@ const SERVER = path.join(__dirname, '..', 'channel', 'server.js');
   const transport = new StdioClientTransport({ command: process.execPath, args: [SERVER] });
   const client = new Client({ name: 'smoke', version: '0.0.1' }, { capabilities: {} });
   await client.connect(transport);
-  console.log('client connected. client-side protocolVersion:', client.protocolVersion);
+  // server 的 pid = transport.pid；close 之后 _process 清空、pid 变 null，必须先记下来
+  const serverPid = transport.pid;
+  console.log('client connected, server pid:', serverPid);
   await new Promise((r) => setTimeout(r, 400)); // 等 debug 落盘
-  await transport.close();
 
-  const debugFile = path.join(os.homedir(), '.claude-float', 'channels', `debug-${transport.pid ?? '?'}.log`);
-  // server 的 pid = transport.pid；若拿不到就列最近的 debug 文件
-  let file = debugFile;
-  if (!fs.existsSync(file)) {
-    const dir = path.dirname(debugFile);
-    const candidates = fs.readdirSync(dir).filter((f) => f.startsWith('debug-')).map((f) => path.join(dir, f));
-    candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-    file = candidates[0];
-  }
-  if (!file || !fs.existsSync(file)) {
-    console.log('FAIL: 没找到 debug 日志');
+  // 必须先读文件再 close：server 退出时 cleanup() 会删掉自己的 debug 文件，
+  // 顺序反了会静默 fallback 到「mtime 最新」的别的会话日志（历史教训）
+  const debugFile = serverPid ? path.join(os.homedir(), '.claude-float', 'channels', `debug-${serverPid}.log`) : null;
+  if (!debugFile || !fs.existsSync(debugFile)) {
+    console.log('FAIL: 没找到本次 server 的 debug 日志（debug-' + serverPid + '.log）');
+    await transport.close();
     process.exit(1);
   }
-  console.log('--- debug log:', file, '---');
-  console.log(fs.readFileSync(file, 'utf8').trim());
+  console.log('--- debug log:', debugFile, '---');
+  console.log(fs.readFileSync(debugFile, 'utf8').trim());
+  await transport.close();
 })().catch((e) => { console.error('FAIL:', e.message); process.exit(1); });

@@ -9,6 +9,8 @@ const os = require('os');
 const path = require('path');
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
+const { ListToolsRequestSchema, CallToolRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+const todos = require('../todos');
 
 // 诊断日志（不含 token）：Claude Code 默认不落 stderr，自己写文件才能看到协商过程。
 // 进程退出时随登记一起删掉；排查时先看 ~/.claude-float/channels/debug-<pid>.log
@@ -89,13 +91,122 @@ function cleanup() {
 const mcp = new Server(
   { name: 'claude-float', version: '0.1.0' },
   {
-    capabilities: { experimental: { 'claude/channel': {} } },
+    capabilities: { tools: {}, experimental: { 'claude/channel': {} } },
     instructions:
       'Messages from <channel source="claude-float"> are typed by the user themself in the "Claude 播报" ' +
       'floating widget on this machine, as a quick reply to this session. Treat each one exactly as if the user ' +
-      'had typed it into this terminal, and answer normally in this session. There is no reply tool.',
+      'had typed it into this terminal, and answer normally in this session. There is no reply tool. ' +
+      'The todos_* tools manage the same todo list that widget shows (~/.claude-float/todos.json): ' +
+      'use them whenever the user asks to record, check, finish or drop a 代办/todo for this machine.',
   },
 );
+
+// ---- 代办单 tools：会话里直接让 Claude 管代办 ----
+// 和浮窗共用 todos.js 与同一个 todos.json；浮窗每 3s 轮询刷新，这边改完不用通知它。
+// 工作区不校验 quick-dirs 白名单：任何目录的会话都能记单（浮窗「全部」筛选下可见，
+// 只有浮窗侧起会话/建单那条路才需要白名单防注入）。
+const TODO_TOOLS = [
+  {
+    name: 'todos_list',
+    description: '列出浮窗代办单（就是「Claude 播报」浮窗里那张看板）。默认只看未完成。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['open', 'done', 'all'], description: 'open=未完成（默认），done=已完成，all=全部' },
+      },
+    },
+  },
+  {
+    name: 'todos_add',
+    description: '新建一张代办单，自动挂到当前会话，工作区取本会话目录。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: '标题（必填）' },
+        desc: { type: 'string', description: '补充描述（可选）' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'todos_toggle',
+    description: '完成一张代办，再调一次重新打开。',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: '代办 id（todos_list 里的 [t-...]）' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'todos_remove',
+    description: '删掉一张代办（不可恢复，删前跟用户确认一下）。',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: '代办 id' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'todos_bind',
+    description: '把一张已有代办挂到当前会话（浮窗上单子会透传本会话的进行中/等待回复状态）。',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: '代办 id' } },
+      required: ['id'],
+    },
+  },
+];
+
+function todoText(t) {
+  const bits = [`[${t.id}] ${t.title}`];
+  if (t.status === 'done') bits.push('（已完成）');
+  if (t.desc) bits.push(`描述：${t.desc}`);
+  if (t.ws) bits.push(`工作区：${t.ws}`);
+  if ((t.sessions || []).length) bits.push(`挂会话 ×${t.sessions.length}`);
+  return '- ' + bits.join('　');
+}
+
+mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TODO_TOOLS }));
+
+mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
+  const name = req.params.name;
+  const args = req.params.arguments || {};
+  const s = currentSession();
+  try {
+    let out;
+    if (name === 'todos_list') {
+      const status = ['open', 'done', 'all'].includes(args.status) ? args.status : 'open';
+      const list = todos.list().filter((t) => status === 'all' || t.status === status);
+      const label = status === 'open' ? '未完成' : status === 'done' ? '已完成' : '';
+      out = list.length ? list.map(todoText).join('\n') : `没有${label}代办`;
+    } else if (name === 'todos_add') {
+      const title = String(args.title || '').trim();
+      if (!title) throw new Error('title 必填');
+      const t = todos.create({ title, desc: args.desc, ws: (s || {}).cwd || process.cwd() });
+      if (s && s.sessionId) todos.bind(t.id, s.sessionId);
+      out = `已建代办 [${t.id}] ${t.title}（挂在本会话，工作区 ${t.ws}）`;
+    } else if (name === 'todos_toggle') {
+      const t = todos.toggle(String(args.id || ''));
+      if (!t) throw new Error(`找不到代办 ${args.id}`);
+      out = t.status === 'done' ? `已完成 [${t.id}] ${t.title}` : `重新打开 [${t.id}] ${t.title}`;
+    } else if (name === 'todos_remove') {
+      if (!todos.remove(String(args.id || ''))) throw new Error(`找不到代办 ${args.id}`);
+      out = `已删除 ${args.id}`;
+    } else if (name === 'todos_bind') {
+      if (!s || !s.sessionId) throw new Error('拿不到当前会话 id，挂不了');
+      const t = todos.bind(String(args.id || ''), s.sessionId);
+      if (!t) throw new Error(`找不到代办 ${args.id}`);
+      out = `已把 [${t.id}] ${t.title} 挂到本会话`;
+    } else {
+      throw new Error(`unknown tool: ${name}`);
+    }
+    debug('tool', name, 'ok');
+    return { content: [{ type: 'text', text: out }] };
+  } catch (e) {
+    debug('tool', name, 'error:', String(e.message || e));
+    return { content: [{ type: 'text', text: `操作失败：${String(e.message || e)}` }], isError: true };
+  }
+});
 
 async function push(text) {
   await mcp.notification({

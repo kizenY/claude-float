@@ -28,7 +28,7 @@ Claude Code runs in a terminal, which means switching windows just to check whet
 - **Read aloud** (speaker icon) — speaks the latest reply; click again, click the stop button, or press `Esc` to stop. Markdown is cleaned up before speaking: code blocks become "code omitted", links speak their text only, paths speak just the filename, tables are read row by row
 - **Quick reply** (orange arrow, sessions started with `cf`) — type in the widget, `Enter` to send / `Shift+Enter` newline / `Esc` cancel. Messages go into the session through Claude Code's official [Channels](https://code.claude.com/docs/en/channels) (research preview) — no window switching, no keystroke simulation into your terminal. Idle Claude replies immediately; a busy Claude gets it on the next turn
 - **Quick launch** — clicking a bottom button pops a menu: start a plain session in that directory, create a todo ticket for it, or start a session bound to one of its open tickets (new PowerShell window; the window stays at the prompt after Claude exits so you can scroll back)
-- **Todo tickets** (clipboard icon in the header, with an open-count badge) — a lightweight kanban of things you want done, one list per quick-launch directory ("workspace"). Create with title + optional description + workspace; filter by workspace, default to open ones, switch to see done. Start a session from a ticket (or pick a ticket in the launch menu) and the new session is **auto-bound** to it: the widget notices the new session in that directory and records its id (`~/.claude-float/todos.json`). Bound sessions get a ticket tag on the session row — click it to jump to the ticket; the ticket shows the live working/waiting status of its sessions. Manual bind/unbind from the ticket's expanded row
+- **Todo tickets** (clipboard icon in the header, with an open-count badge) — a lightweight kanban of things you want done, one list per quick-launch directory ("workspace"). Create with title + optional description + workspace; filter by workspace, default to open ones, switch to see done. Start a session from a ticket (or pick a ticket in the launch menu) and the new session is **auto-bound** to it: the widget notices the new session in that directory and records its id (`~/.claude-float/todos.json`). Bound sessions get a ticket tag on the session row — click it to jump to the ticket; the ticket shows the live working/waiting status of its sessions. Manual bind/unbind from the ticket's expanded row. **Manageable from inside a session too**: any session that loads the claude-float MCP can call the `todos_*` tools (see below) to add, list, finish or drop tickets for you; the widget polls every 3s, so both sides see the same list
 - **Desktop pet** — a little companion squatting in a screen corner that mirrors your sessions: runs in place while a session works, tilts its head when one waits for you, jumps to celebrate a finished task, and wears a count badge when sessions await your input. **A session tray sits above the pet** (working / waiting / just-finished sessions; none → just the pet): waiting-first ordering, colored status dots; finished sessions linger as "idle" until you've looked at them, click a row to jump to that terminal (opening a waiting/idle row marks it handled and it leaves the tray). Click the pet to toggle the widget, double-click to hide (tray menu brings it back). Reads Codex pet packs from `~/.codex/pets/` out of the box; your own pets go into `~/.claude-float/pets/`. Toggle and pick pets from the tray menu
 - **Widget niceties** — pin / collapse to a 40px bar / hide to tray; position, size and pinned state are remembered. Tray icon toggles visibility; tray menu has optional "run at login" (off by default)
 - **Text-to-speech**: online neural voices by default (same voices as Edge "Read Aloud" — natural-sounding), or offline system voices as fallback
@@ -153,6 +153,18 @@ Pick voice and rate at the bottom. Online neural voices go to Microsoft's speech
 ## How quick reply works
 
 `channel/server.js` is an MCP server that Claude Code launches with the session. It listens on a random `127.0.0.1` port and registers the session in `~/.claude-float/channels/<pid>.json` with a one-time secret. The widget reads those registration files, and pushes your text into the session via the `notifications/claude/channel` MCP notification. Everything stays on localhost; the secret is per-session and single-use.
+
+The same server also exposes todo tools, usable in **any** session that loads it (not just `cf`-launched ones):
+
+| Tool | What it does |
+| --- | --- |
+| `todos_list` | List tickets; open by default, `status=done/all` for done/all |
+| `todos_add` | Create a ticket, auto-bound to the current session, workspace = this session's directory |
+| `todos_toggle` | Complete / reopen a ticket |
+| `todos_remove` | Delete a ticket (the tool description tells the model to confirm with you first) |
+| `todos_bind` | Bind an existing ticket to the current session |
+
+The tools read/write the same `~/.claude-float/todos.json` the widget shows, and the widget polls every 3s — no notification needed. Just say "记个代办：xxx" / "check my todos" / "mark that one done" in any session.
 
 If the channel notification doesn't land (some Claude Code versions silently drop it — [issue #44181](https://github.com/anthropics/claude-code/issues/44181)), the widget automatically falls back to typing into the session's real console via `WriteConsoleInputW` (no focus steal, no clipboard), and only then to focus + paste + Enter.
 
