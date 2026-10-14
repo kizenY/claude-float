@@ -21,4 +21,5 @@ contextBridge.exposeInMainWorld('api', {
   petDismiss: (key) => ipcRenderer.invoke('pet:dismiss', key),
   petMoveBy: (dx, dy) => ipcRenderer.invoke('pet:move', dx, dy),
   petHide: () => ipcRenderer.invoke('pet:hide'),
+  petToggleMain: () => ipcRenderer.invoke('pet:toggle-main'),
 });

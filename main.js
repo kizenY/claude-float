@@ -543,6 +543,8 @@ ipcMain.handle('pet:dismiss', (_e, key) => {
   return true;
 });
 ipcMain.handle('pet:hide', () => setPetEnabled(false));
+// 点宠物本体 = 切换浮窗显隐（和托盘图标单击同款）
+ipcMain.handle('pet:toggle-main', () => toggleWindow());
 
 // 调试截图（CLAUDE_FLOAT_SNAPSHOT）时豁免单实例锁：正主浮窗在跑也能起第二个实例出图，
 // 截完自动退出；channel server 是随机端口，不会撞

@@ -12,7 +12,6 @@ const TRAY_WIDTH = 280;
 const PET_SIZE = { width: 150, height: 162 }; // 和 main.js 的 PET_WIDTH/PET_HEIGHT 对齐
 const ROW_HEIGHT = 46; // 和 pet.css 里 .trow 实高对齐（两行文字 + padding）
 const TRAY_GAP = 8; // 托盘卡片四周留白
-const QUICK_GAP = 8; // 快捷目录卡片上下留白
 const MAX_ROWS = 9;
 
 let anims = {};
@@ -22,9 +21,6 @@ let timer = null;
 let lastData = { working: false, waiting: false, finishedAt: 0, items: [] };
 let celebratedAt = 0;
 let sentSize = null; // 上次发给主进程的窗口尺寸，没变化就不重复 setBounds
-let quickDirs = null; // null = 还没加载完；空数组 = 没配目录（点了不展开）
-let quickVisible = false; // 快捷目录卡片默认隐藏，点宠物本体切换
-let quickH = 0; // 快捷卡片实测高（含 padding/border），显隐切换后重算窗口
 
 function ago(ms) {
   const s = Math.max(0, (Date.now() - ms) / 1000);
@@ -91,13 +87,12 @@ function baseAnim() {
   return 'idle';
 }
 
-// ---- 托盘尺寸：会话数/快捷目录显隐变了就调窗口（锚点在宠物本体，向上长） ----
+// ---- 托盘尺寸：会话数变了就调窗口（锚点在宠物本体，向上长） ----
 function applySize() {
   const n = Math.min(lastData.items.length, MAX_ROWS);
-  const quickPart = quickVisible && quickH ? quickH + QUICK_GAP : 0;
   const listPart = n > 0 ? n * ROW_HEIGHT + TRAY_GAP : 0;
-  const size = listPart || quickPart
-    ? { width: TRAY_WIDTH, height: PET_SIZE.height + quickPart + listPart }
+  const size = listPart
+    ? { width: TRAY_WIDTH, height: PET_SIZE.height + listPart }
     : { ...PET_SIZE };
   if (sentSize && sentSize.width === size.width && sentSize.height === size.height) return;
   sentSize = size;
@@ -173,32 +168,6 @@ function renderTray() {
   }));
 }
 
-// ---- 快捷目录：和浮窗底部共用 quick-dirs.json，点目录名在对应目录起一个 cf 会话 ----
-const quickEl = document.getElementById('quick');
-
-function renderQuick() {
-  if (!quickDirs) return;
-  quickEl.replaceChildren(...quickDirs.map((d) => {
-    const b = document.createElement('button');
-    b.className = 'qbtn';
-    b.textContent = d.name;
-    b.title = `在 ${d.path} 起一个 cf 会话`;
-    b.addEventListener('click', () => window.api.spawn(d.path).catch(() => {}));
-    return b;
-  }));
-}
-
-function toggleQuick() {
-  if (!quickDirs || !quickDirs.length) return; // 目录没加载完/没配置：点了不展开
-  quickVisible = !quickVisible;
-  quickEl.hidden = !quickVisible;
-  renderQuick();
-  requestAnimationFrame(() => { // 等布局出来再量实际高度
-    quickH = quickVisible ? quickEl.offsetHeight : 0;
-    applySize();
-  });
-}
-
 // ---- 状态轮询：主进程聚合 claude + codex 两边，只回 在跑/等你 的会话 ----
 async function pollSessions() {
   try {
@@ -217,7 +186,7 @@ async function pollSessions() {
   } catch { /* 主进程忙时不更新 */ }
 }
 
-// ---- 手动拖拽（只在宠物本体上按下）；点一下切换快捷目录显隐（顺手挥个手），双击隐藏（托盘里再开） ----
+// ---- 手动拖拽（只在宠物本体上按下）；点一下切换浮窗显隐（顺手挥个手），双击隐藏（托盘里再开） ----
 let drag = null;
 let moved = 0;
 
@@ -239,7 +208,7 @@ addEventListener('mousemove', (e) => {
 addEventListener('mouseup', () => {
   const d = drag;
   drag = null;
-  if (d && moved < 6) { toggleQuick(); playOneShot('waving'); }
+  if (d && moved < 6) { window.api.petToggleMain().catch(() => {}); playOneShot('waving'); }
 });
 petEl.addEventListener('dblclick', () => window.api.petHide());
 
@@ -264,13 +233,10 @@ let cols = 8;
   cols = pet.columns;
   petEl.style.backgroundImage = `url(${sheet})`;
   petEl.style.backgroundSize = `${fw * cols}px ${fh * pet.rows}px`;
-  petEl.title = `${pet.name}${pet.description ? ' · ' + pet.description : ''}（点一下切换快捷目录，双击隐藏）`;
+  petEl.title = `${pet.name}${pet.description ? ' · ' + pet.description : ''}（点一下切换浮窗显隐，双击隐藏）`;
   anims = pet.animations;
   document.body.append(badgeEl);
   setAnim('idle');
   pollSessions();
   setInterval(pollSessions, 3000);
-  window.api.quickDirs().then((dirs) => {
-    quickDirs = Array.isArray(dirs) ? dirs : [];
-  }).catch(() => { quickDirs = []; });
 })();
