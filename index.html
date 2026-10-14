@@ -20,6 +20,10 @@
       <button id="mode-codex" type="button">Codex</button>
     </div>
     <div class="actions">
+      <button id="btn-todos" class="icon" title="代办单">
+        <svg viewBox="0 0 24 24"><path d="M9 4h6V2H9v2zM7 4H5.5A1.5 1.5 0 0 0 4 5.5v15A1.5 1.5 0 0 0 5.5 22h13a1.5 1.5 0 0 0 1.5-1.5v-15A1.5 1.5 0 0 0 18.5 4H17" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 13l2.5 2.5L16 10.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span id="todo-badge" class="todo-badge" hidden></span>
+      </button>
       <button id="btn-stop" class="icon" title="停止朗读 (Esc)" hidden>
         <svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
       </button>
@@ -38,7 +42,44 @@
   <ul id="list" class="list"></ul>
   <div id="empty" class="empty" hidden>还没有找到会话记录</div>
 
-  <div id="launch" class="launch" title="在常用目录起一个新的 cf 会话"></div>
+  <!-- 代办单面板：盖住会话列表区域，其余（启动条/表尾）不变 -->
+  <div id="todos" class="todos" hidden>
+    <div id="todo-view">
+      <div class="todos-head">
+        <span class="todos-title">代办</span>
+        <div class="todo-seg" title="切换看未完成/已完成">
+          <button id="todo-tab-open" type="button" class="on">未完成</button>
+          <button id="todo-tab-done" type="button">已完成</button>
+        </div>
+        <button id="todo-new" type="button" class="todo-add">＋ 新建</button>
+        <button id="todo-close" type="button" class="icon todo-close" title="关闭 (Esc)">
+          <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div id="todo-filters" class="todo-filters"></div>
+      <div id="todo-list" class="todo-list"></div>
+    </div>
+    <form id="todo-form" class="todo-form" hidden>
+      <div class="todos-head">
+        <span class="todos-title">新建代办</span>
+        <button type="button" id="todo-form-close" class="icon todo-close" title="取消 (Esc)">
+          <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <label class="todo-label">标题</label>
+      <input id="todo-title" class="todo-input" placeholder="要做什么" maxlength="120">
+      <label class="todo-label">描述（可选）</label>
+      <textarea id="todo-desc" class="todo-input" rows="3" maxlength="2000"></textarea>
+      <label class="todo-label">工作区</label>
+      <select id="todo-ws" class="todo-input"></select>
+      <div class="todo-form-row">
+        <button type="button" id="todo-cancel" class="text-btn">取消</button>
+        <button type="submit" id="todo-submit" class="send-btn">创建</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="launch" class="launch" title="点一下：新会话 / 新建代办 / 挂单起会话"></div>
 
   <div id="plan" class="plan" hidden></div>
 

@@ -27,7 +27,8 @@ Claude Code runs in a terminal, which means switching windows just to check whet
   - session already exited → opens a fresh PowerShell terminal in the session's original directory and runs `claude --resume <id>`
 - **Read aloud** (speaker icon) — speaks the latest reply; click again, click the stop button, or press `Esc` to stop. Markdown is cleaned up before speaking: code blocks become "code omitted", links speak their text only, paths speak just the filename, tables are read row by row
 - **Quick reply** (orange arrow, sessions started with `cf`) — type in the widget, `Enter` to send / `Shift+Enter` newline / `Esc` cancel. Messages go into the session through Claude Code's official [Channels](https://code.claude.com/docs/en/channels) (research preview) — no window switching, no keystroke simulation into your terminal. Idle Claude replies immediately; a busy Claude gets it on the next turn
-- **Quick launch** — bottom buttons start a new `cf` session in your favorite directories (new PowerShell window; the window stays at the prompt after Claude exits so you can scroll back)
+- **Quick launch** — clicking a bottom button pops a menu: start a plain session in that directory, create a todo ticket for it, or start a session bound to one of its open tickets (new PowerShell window; the window stays at the prompt after Claude exits so you can scroll back)
+- **Todo tickets** (clipboard icon in the header, with an open-count badge) — a lightweight kanban of things you want done, one list per quick-launch directory ("workspace"). Create with title + optional description + workspace; filter by workspace, default to open ones, switch to see done. Start a session from a ticket (or pick a ticket in the launch menu) and the new session is **auto-bound** to it: the widget notices the new session in that directory and records its id (`~/.claude-float/todos.json`). Bound sessions get a ticket tag on the session row — click it to jump to the ticket; the ticket shows the live working/waiting status of its sessions. Manual bind/unbind from the ticket's expanded row
 - **Desktop pet** — a little companion squatting in a screen corner that mirrors your sessions: runs in place while a session works, tilts its head when one waits for you, jumps to celebrate a finished task, and wears a count badge when sessions await your input. **A session tray sits above the pet** (working / waiting / just-finished sessions; none → just the pet): waiting-first ordering, colored status dots; finished sessions linger as "idle" until you've looked at them, click a row to jump to that terminal (opening a waiting/idle row marks it handled and it leaves the tray). Click the pet to toggle the widget, double-click to hide (tray menu brings it back). Reads Codex pet packs from `~/.codex/pets/` out of the box; your own pets go into `~/.claude-float/pets/`. Toggle and pick pets from the tray menu
 - **Widget niceties** — pin / collapse to a 40px bar / hide to tray; position, size and pinned state are remembered. Tray icon toggles visibility; tray menu has optional "run at login" (off by default)
 - **Text-to-speech**: online neural voices by default (same voices as Edge "Read Aloud" — natural-sounding), or offline system voices as fallback
@@ -83,7 +84,7 @@ The first launch shows a one-time development-channels warning — pick "I am us
 ]
 ```
 
-Without this file you get a single `home` button. Restart the widget after editing.
+Without this file you get a single `home` button. Restart the widget after editing. These directories double as the workspaces of todo tickets.
 
 ### Desktop pet
 

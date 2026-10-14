@@ -12,7 +12,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/speech-text.test.js && node test/status.test.js && node test/glm-usage.test.js && node test/channel.test.js && node test/codex.test.js && node test/pet.test.js"
+    "test": "node test/speech-text.test.js && node test/status.test.js && node test/glm-usage.test.js && node test/channel.test.js && node test/codex.test.js && node test/pet.test.js && node test/todos.test.js"
   },
   "devDependencies": {
     "electron": "^39.2.7"

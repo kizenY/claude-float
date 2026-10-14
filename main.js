@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const sessions = require('./sessions');
 const codex = require('./codex-sessions');
+const todos = require('./todos');
 const edgeTts = require('./edge-tts');
 const reply = require('./reply');
 const focus = require('./focus');
@@ -209,8 +210,18 @@ function snapshot(target, out) {
 }
 
 ipcMain.handle('sessions:list', async (_e, limit, mode) => {
-  if (mode === 'codex') return codex.attachPids(codex.list(limit));
-  return sessions.list(limit);
+  const res = mode === 'codex' ? codex.attachPids(codex.list(limit)) : sessions.list(limit);
+  // 起会话挂单：等新会话在列表里冒头了就把 id 写进代办（只匹配 claude 会话）
+  if (pendingBind && mode !== 'codex') {
+    const hitId = todos.matchPending(res, pendingBind);
+    if (hitId) {
+      todos.bind(pendingBind.todoId, hitId);
+      pendingBind = null;
+    } else if (Date.now() - pendingBind.at > todos.PENDING_TTL) {
+      pendingBind = null; // 新会话一直没来（起失败/太久），放弃
+    }
+  }
+  return res;
 });
 ipcMain.handle('sessions:reply', (_e, file, mode) => {
   // 只允许读会话记录目录里的文件
@@ -361,6 +372,62 @@ ipcMain.handle('session:spawn', (_e, dir, mode) => {
   if (mode === 'codex') spawnCodexTerminal(target.path);
   else spawnCfTerminal(target.path);
   return { ok: true, name: target.name };
+});
+
+// ---- 代办单：~/.claude-float/todos.json，工作区 = quick-dirs 白名单里的目录 ----
+// 起会话前先记下「这个目录当前已知的会话 id」，之后冒出来的新会话就是要挂的那条
+let pendingBind = null; // { todoId, ws, knownIds, at }，内存态：浮窗重启丢了就手动补挂
+function armPending(todoId, ws) {
+  const knownIds = sessions.list(200).filter((s) => todos.sameDir(s.cwd, ws)).map((s) => s.id);
+  pendingBind = { todoId, ws, knownIds, at: Date.now() };
+}
+
+// 启动条左键弹菜单：新会话 / 新建代办 / 这个工作区的未完成单（点单 = 起会话并挂单）。
+// 挂单只对 Claude 会话有效（Codex 会话 id 是另一套，v1 不挂）
+ipcMain.handle('launch:menu', (_e, dir, mode) => {
+  const target = QUICK_DIRS.find((d) => d.path === dir);
+  if (!target) throw new Error('bad dir');
+  const spawnFn = mode === 'codex' ? spawnCodexTerminal : spawnCfTerminal;
+  const items = [
+    { label: `新会话（${target.name}）`, click: () => spawnFn(target.path) },
+    { label: '新建代办…', click: () => win.webContents.send('todos:new', { ws: target.path }) },
+  ];
+  if (mode !== 'codex') {
+    const open = todos.list().filter((t) => t.status === 'open' && todos.sameDir(t.ws, target.path));
+    if (open.length) {
+      items.push(
+        { type: 'separator' },
+        { label: '起会话并挂单：', enabled: false },
+        ...open.slice(0, 10).map((t) => ({
+          label: t.title,
+          click: () => { armPending(t.id, t.ws); spawnCfTerminal(t.ws); },
+        })),
+      );
+    }
+  }
+  Menu.buildFromTemplate(items).popup({ window: win });
+});
+
+ipcMain.handle('todos:list', () => todos.list());
+ipcMain.handle('todos:create', (_e, { title, desc, ws }) => {
+  const t = { title: String(title || ''), desc: String(desc || ''), ws: String(ws || '') };
+  if (!t.title.trim()) throw new Error('title required');
+  // 工作区必须是 quick-dirs 白名单里的目录，和 session:spawn 同一套防注入
+  if (!QUICK_DIRS.some((d) => d.path === t.ws)) throw new Error('bad ws');
+  return todos.create(t);
+});
+ipcMain.handle('todos:toggle', (_e, id) => todos.toggle(String(id)));
+ipcMain.handle('todos:delete', (_e, id) => ({ ok: todos.remove(String(id)) }));
+ipcMain.handle('todos:bind', (_e, { id, sessionId }) => todos.bind(String(id), String(sessionId)));
+ipcMain.handle('todos:unbind', (_e, { id, sessionId }) => todos.unbind(String(id), String(sessionId)));
+ipcMain.handle('todos:spawn', (_e, id) => {
+  const t = todos.list().find((x) => x.id === String(id));
+  if (!t || t.status !== 'open' || !QUICK_DIRS.some((d) => d.path === t.ws)) {
+    return { ok: false, message: '这张代办不在了，或工作区不在启动目录列表里' };
+  }
+  armPending(t.id, t.ws);
+  spawnCfTerminal(t.ws);
+  return { ok: true };
 });
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);
 ipcMain.handle('tts:synthesize', (_e, text, opts) => edgeTts.synthesize(String(text), opts));
