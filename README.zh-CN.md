@@ -21,8 +21,7 @@ Claude Code 跑在终端里，看一眼它说完没有、回一句话，都得�
 - **Claude / Codex 一键切换** —— 标题栏的开关一键换形态：会话列表、主题色、快捷启动命令、回复通道整套跟着切
 - **会话列表**：读 `~/.claude/projects/*/*.jsonl`（只读），列出最近会话
 - **状态标注**：每个会话显示 **进行中**（Claude 在干活）/ **等待回复**（Claude 在问你、等你确认计划，多半在等你批准）/ 最后一条回复是多久之前。状态优先用 Claude Code 自己写的 `~/.claude/sessions/<pid>.json`，会话没在跑时才从会话记录推测
-- **用量与档位统计**：每行尾部显示这个会话的 **高/低档请求数**（按 API 响应里的实际模型统计：opus·glm-strong 算高档、haiku·glm-flash 算低档——如果你在用本地分流网关，一眼看出每个会话的请求都走了哪档）和 **上下文占用条**（按 200k 窗口，超过 80% 变红，提示该 `/compact` 了）。悬停看具体 token 数
-- **订阅用量**（可选）：底部一行显示 GLM Coding Plan 各重置窗口的已用百分比（5 小时窗 + 周窗），悬停看剩余额度和重置时间，点击打开控制台。在 `~/.claude-float/glm.json` 里配置 API key 才显示，没有就不显示
+- **订阅用量**（可选）：底部一行显示 GLM Coding Plan 各重置窗口的已用百分比（`5-hour 64% · weekly 38%`），悬停看剩余额度和重置时间，点击打开控制台。在 `~/.claude-float/glm.json` 里配置 API key 才显示，没有就不显示
 - **点会话那一行**：
   - 会话还在跑 → 把它的终端窗口在前台/后台间切换（已在前台再点一下就最小化）
   - 会话已结束 → 新开一个 PowerShell 终端，回到会话原目录用 `claude --resume` 恢复
@@ -134,7 +133,7 @@ settings=C:\path\to\gateway-settings.json
 { "apiKey": "你的 Coding Plan API key" }
 ```
 
-浮窗底部显示一行各重置窗口的已用百分比（主进程每分钟拉一次 [官方用量接口](https://docs.bigmodel.cn/cn/coding-plan/overview)）。Z.ai 用户加 `"endpoint": "https://api.z.ai"`。没有这个文件就不显示这一行，其他功能不受影响。
+浮窗底部显示一行 `5-hour 64% · weekly 38%`（各重置窗口的已用百分比，主进程每分钟拉一次 [官方用量接口](https://docs.bigmodel.cn/cn/coding-plan/overview)）。Z.ai 用户加 `"endpoint": "https://api.z.ai"`。没有这个文件就不显示这一行，其他功能不受影响。
 
 ### 环境变量
 

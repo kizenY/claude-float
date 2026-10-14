@@ -75,30 +75,6 @@ function rowButton(icon, title, onClick) {
   return btn;
 }
 
-// 行尾 usage 统计：高低档请求数（jev 分流口径）+ 当前上下文占用条（200k 窗口，>80% 变红提醒该 /compact 了）
-const CONTEXT_WINDOW = 200000;
-function renderStats(s) {
-  const stat = document.createElement('span');
-  stat.className = 'stat';
-  const { ctx, hi, lo } = s.stats || {};
-  if (hi + lo > 0) {
-    const tiers = document.createElement('span');
-    tiers.className = 'tiers';
-    tiers.textContent = [hi ? `高${hi}` : '', lo ? `低${lo}` : ''].filter(Boolean).join('/');
-    tiers.title = `按上游实际模型统计的高/低档请求数（opus·glm-strong=高，haiku·glm-flash=低）`;
-    stat.append(tiers);
-  }
-  if (ctx) {
-    const pct = Math.min(100, Math.round(ctx / CONTEXT_WINDOW * 100));
-    const bar = document.createElement('span');
-    bar.className = 'ctx' + (pct >= 80 ? ' hot' : '');
-    bar.innerHTML = `<i style="width:${pct}%"></i>`;
-    bar.title = `上下文约 ${Math.round(ctx / 1000)}k / ${CONTEXT_WINDOW / 1000}k tokens（${pct}%）`;
-    stat.append(bar);
-  }
-  return stat;
-}
-
 function render() {
   $('empty').hidden = sessions.length > 0;
   $('empty').textContent = mode === 'codex'
@@ -152,10 +128,7 @@ function render() {
       tag.textContent = s.project;
       preview.append(tag);
     }
-    const ptext = document.createElement('span');
-    ptext.className = 'ptext';
-    ptext.append(s.preview || (s.channel ? '新会话，可以直接从这里发第一条消息' : ''));
-    preview.append(ptext, renderStats(s));
+    preview.append(s.preview || (s.channel ? '新会话，可以直接从这里发第一条消息' : ''));
 
     li.append(title, meta, preview);
     li.addEventListener('click', () => focusSession(s));
@@ -218,17 +191,21 @@ function fmtReset(ms) {
     : d.toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// 各重置窗口的短标签：接口不回窗口名，按 nextResetTime 升序排好后对号入座
+// （最近的=5 小时窗，其次是周窗）；真出现别的窗口结构，title 里还有完整信息
+const WINDOW_LABELS = ['5-hour', 'weekly'];
+
 function renderPlan(u) {
   const el = $('plan');
   if (!u || !u.windows || !u.windows.length) { el.hidden = true; return; }
   el.hidden = false;
-  const label = u.level ? `GLM ${u.level}` : 'GLM';
-  el.textContent = [label, ...u.windows.map((w) => `已用 ${w.pct}%`)].join(' · ');
-  el.title = [`${label} 订阅用量`,
+  const label = (i) => WINDOW_LABELS[i] || `window ${i + 1}`;
+  el.textContent = u.windows.map((w, i) => `${label(i)} ${w.pct}%`).join(' · ');
+  el.title = ['GLM 订阅用量',
     ...u.windows.map((w, i) => {
       const left = w.remaining != null ? ` · 剩 ${(w.remaining / 1000).toFixed(1)}k` : '';
       const reset = w.resetAt ? ` · ${fmtReset(w.resetAt)} 重置` : '';
-      return `窗口 ${i + 1}：已用 ${w.pct}%${left}${reset}`;
+      return `${label(i)}：已用 ${w.pct}%${left}${reset}`;
     }),
   ].join('\n');
 }

@@ -21,8 +21,7 @@ Claude Code runs in a terminal, which means switching windows just to check whet
 - **Claude / Codex, one click apart** — the header toggle switches the whole widget between the two: session list, theme color, quick-launch command and reply plumbing
 - **Session list** — reads `~/.claude/projects/*/*.jsonl` (read-only), shows your recent sessions
 - **Live status** per session: **Working** / **Waiting for you** (Claude asked a question, plan approval, long-running tool call) / how long ago the last reply came. Prefers the status Claude Code itself writes to `~/.claude/sessions/<pid>.json`; falls back to guessing from the transcript when the session isn't running
-- **Usage & model tiers** per session — each row's tail shows the **high/low-tier request counts** (counted from the model the API actually served: opus·glm-strong = high, haiku·glm-flash = low — handy if you route through a local model-routing gateway) and a **context-usage bar** (against a 200k window; turns red past 80% as a `/compact` hint). Hover for exact token counts
-- **Subscription usage** (optional) — one line at the bottom showing the GLM Coding Plan quota per reset window (5-hour + weekly); hover for remaining credits and reset times, click to open the console. Only shows up when you put an API key in `~/.claude-float/glm.json`
+- **Subscription usage** (optional) — one line at the bottom showing the GLM Coding Plan quota per reset window (`5-hour 64% · weekly 38%`); hover for remaining credits and reset times, click to open the console. Only shows up when you put an API key in `~/.claude-float/glm.json`
 - **Click a row**:
   - session still running → toggle its terminal between foreground/background (click again while in front to minimize)
   - session already exited → opens a fresh PowerShell terminal in the session's original directory and runs `claude --resume <id>`
@@ -134,7 +133,7 @@ settings=C:\path\to\gateway-settings.json
 { "apiKey": "your Coding Plan API key" }
 ```
 
-One line at the widget's bottom shows the used percentage per reset window (main process polls the [official usage endpoint](https://docs.bigmodel.cn/cn/coding-plan/overview) once a minute). On Z.ai add `"endpoint": "https://api.z.ai"`. No file → the line stays hidden, nothing else changes.
+One line at the widget's bottom shows `5-hour 64% · weekly 38%` (used percentage per reset window; the main process polls the [official usage endpoint](https://docs.bigmodel.cn/cn/coding-plan/overview) once a minute). On Z.ai add `"endpoint": "https://api.z.ai"`. No file → the line stays hidden, nothing else changes.
 
 ### Environment variables
 
