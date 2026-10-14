@@ -118,11 +118,15 @@ body {
 .time { color: var(--muted); font-size: 11px; white-space: nowrap; align-self: center; }
 .preview {
   grid-column: 1 / -1;
+  display: flex; align-items: center;
   color: var(--muted); font-size: 12px;
+}
+.ptext {
+  flex: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .project {
-  display: inline-block;
+  flex: none;
   padding: 0 5px; margin-right: 5px;
   border-radius: 4px;
   background: var(--hover);
@@ -130,6 +134,32 @@ body {
   font-size: 11px;
 }
 .item:hover .project { background: var(--bg); }
+
+/* 行尾 usage 统计：高低档计数 + 上下文占用条 */
+.stat { flex: none; display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; }
+.tiers {
+  font-size: 10.5px; padding: 0 5px; border-radius: 4px;
+  background: var(--hover); color: var(--muted);
+  white-space: nowrap;
+}
+.item:hover .tiers { background: var(--bg); }
+.ctx {
+  display: inline-block; width: 40px; height: 4px;
+  border-radius: 2px; background: var(--line);
+  overflow: hidden;
+}
+.ctx i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.ctx.hot i { background: #c0392b; }
+
+/* jev-gateway 全局统计行（配了日志路径才有） */
+.jev {
+  flex: none;
+  padding: 3px 12px 4px;
+  border-top: 1px solid var(--line);
+  font-size: 10.5px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jev.on { color: var(--accent); }
 .chip { font-size: 11px; padding: 0 6px; border-radius: 9px; }
 .chip.working { color: var(--accent); background: var(--accent-soft); }
 .chip.waiting { color: var(--wait); background: var(--wait-soft); font-weight: 600; }

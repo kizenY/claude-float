@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   reply: (file, mode) => ipcRenderer.invoke('sessions:reply', file, mode),
   edgeVoices: () => ipcRenderer.invoke('tts:voices'),
   synthesize: (text, opts) => ipcRenderer.invoke('tts:synthesize', text, opts),
+  jevStats: () => ipcRenderer.invoke('jev:stats'),
   togglePin: () => ipcRenderer.invoke('win:pin'),
   isPinned: () => ipcRenderer.invoke('win:isPinned'),
   toggleCollapse: () => ipcRenderer.invoke('win:collapse'),

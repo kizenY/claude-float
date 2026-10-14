@@ -75,6 +75,30 @@ function rowButton(icon, title, onClick) {
   return btn;
 }
 
+// 行尾 usage 统计：高低档请求数（jev 分流口径）+ 当前上下文占用条（200k 窗口，>80% 变红提醒该 /compact 了）
+const CONTEXT_WINDOW = 200000;
+function renderStats(s) {
+  const stat = document.createElement('span');
+  stat.className = 'stat';
+  const { ctx, hi, lo } = s.stats || {};
+  if (hi + lo > 0) {
+    const tiers = document.createElement('span');
+    tiers.className = 'tiers';
+    tiers.textContent = [hi ? `高${hi}` : '', lo ? `低${lo}` : ''].filter(Boolean).join('/');
+    tiers.title = `按上游实际模型统计的高/低档请求数（opus·glm-strong=高，haiku·glm-flash=低）`;
+    stat.append(tiers);
+  }
+  if (ctx) {
+    const pct = Math.min(100, Math.round(ctx / CONTEXT_WINDOW * 100));
+    const bar = document.createElement('span');
+    bar.className = 'ctx' + (pct >= 80 ? ' hot' : '');
+    bar.innerHTML = `<i style="width:${pct}%"></i>`;
+    bar.title = `上下文约 ${Math.round(ctx / 1000)}k / ${CONTEXT_WINDOW / 1000}k tokens（${pct}%）`;
+    stat.append(bar);
+  }
+  return stat;
+}
+
 function render() {
   $('empty').hidden = sessions.length > 0;
   $('empty').textContent = mode === 'codex'
@@ -128,7 +152,10 @@ function render() {
       tag.textContent = s.project;
       preview.append(tag);
     }
-    preview.append(s.preview || (s.channel ? '新会话，可以直接从这里发第一条消息' : ''));
+    const ptext = document.createElement('span');
+    ptext.className = 'ptext';
+    ptext.append(s.preview || (s.channel ? '新会话，可以直接从这里发第一条消息' : ''));
+    preview.append(ptext, renderStats(s));
 
     li.append(title, meta, preview);
     li.addEventListener('click', () => focusSession(s));
@@ -176,6 +203,20 @@ async function refresh() {
   } catch (e) {
     console.error(e);
   }
+  refreshJev();
+}
+
+// ---- jev-gateway 全局统计：底部一行，没配日志路径或读不到就不显示 ----
+async function refreshJev() {
+  try {
+    const st = await window.api.jevStats();
+    const el = $('jev');
+    if (!st) { el.hidden = true; return; }
+    el.hidden = false;
+    el.classList.toggle('on', st.online);
+    el.textContent = `${st.online ? '●' : '○'} Jev 高${st.hi}/低${st.lo} · 判分 ${st.judged}/${st.total} · 均 ${(st.avgMs / 1000).toFixed(1)}s`;
+    el.title = `jev-gateway 最近 ${st.total} 个请求（日志尾部窗口）· 最后请求 ${ago(st.lastAt)}\n高低档口径：opus·glm-strong=高，haiku·glm-flash=低`;
+  } catch { /* 网关行不显示就算了 */ }
 }
 
 // 点列表项：有窗口就切到会话的终端前台/后台；会话已结束则新开终端恢复它（快捷回复走 ↩ 按钮，不走这里）

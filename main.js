@@ -9,6 +9,7 @@ const edgeTts = require('./edge-tts');
 const reply = require('./reply');
 const focus = require('./focus');
 const petMod = require('./pet');
+const jev = require('./jev');
 
 const COLLAPSED_HEIGHT = 40;
 // 宠物窗口 = 一帧 192x208 × zoom 0.78（和 pet.css 对齐）
@@ -331,6 +332,7 @@ ipcMain.handle('session:spawn', (_e, dir, mode) => {
 });
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);
 ipcMain.handle('tts:synthesize', (_e, text, opts) => edgeTts.synthesize(String(text), opts));
+ipcMain.handle('jev:stats', () => jev.stats());
 ipcMain.handle('win:pin', () => {
   const next = !win.isAlwaysOnTop();
   win.setAlwaysOnTop(next, 'screen-saver');
@@ -510,7 +512,9 @@ ipcMain.handle('pet:dismiss', (_e, key) => {
 });
 ipcMain.handle('pet:hide', () => setPetEnabled(false));
 
-if (!app.requestSingleInstanceLock()) {
+// 调试截图（CLAUDE_FLOAT_SNAPSHOT）时豁免单实例锁：正主浮窗在跑也能起第二个实例出图，
+// 截完自动退出；channel server 是随机端口，不会撞
+if (!app.requestSingleInstanceLock() && !process.env.CLAUDE_FLOAT_SNAPSHOT) {
   app.quit();
 } else {
   app.on('second-instance', () => { if (win) { win.show(); win.focus(); } });

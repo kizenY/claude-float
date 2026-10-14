@@ -6,8 +6,8 @@ const path = require('path');
 const ROOT = path.join(os.homedir(), '.claude', 'projects');
 const LIVE_ROOT = path.join(os.homedir(), '.claude', 'sessions');
 const CHANNEL_ROOT = path.join(os.homedir(), '.claude-float', 'channels');
-// 先只读文件尾部，找不到回复再逐级放大
-const TAIL_STEPS = [512 * 1024, 4 * 1024 * 1024, Infinity];
+// 先只读文件尾部，找不到回复再逐级放大；最后一级封顶，超大 transcript 活跃写入期不整文件进内存
+const TAIL_STEPS = [512 * 1024, 4 * 1024 * 1024, 32 * 1024 * 1024];
 
 // 需要你回答才能继续的工具
 const INTERACTIVE_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
@@ -53,6 +53,39 @@ function userPrompt(e) {
 }
 
 const isMain = (e) => (e.type === 'user' || e.type === 'assistant') && !e.isSidechain && e.message;
+
+// 按上游实际模型分高低档（对齐 jev-gateway 的路由位：haiku/opus 与 GLM 路径的 flash/strong）。
+// message.model 记的是 API 响应里的实际模型——走分流网关时响应的就是分到的那一档
+function tierOf(model) {
+  if (!model || typeof model !== 'string') return null;
+  if (/opus|glm-strong/i.test(model)) return 'hi';
+  if (/haiku|flash/i.test(model)) return 'lo';
+  return null;
+}
+
+// 顺带从主线 assistant 消息统计 usage：高低档请求数、累计输出、当前上下文占用。
+// 同一条消息（message.id 相同）拆多行、usage 每行重复，按 id 去重
+function usageStats(entries) {
+  const reqs = new Map(); // message.id -> { tier, out }
+  let ctx = null;
+  for (const e of entries) {
+    if (e.type !== 'assistant' || e.isSidechain || !e.message || !e.message.usage) continue;
+    const u = e.message.usage;
+    const id = e.message.id || e.uuid;
+    if (id && !reqs.has(id)) reqs.set(id, { tier: tierOf(e.message.model), out: u.output_tokens || 0 });
+    // 最后一条的 input + cache ≈ 当前上下文窗口占用
+    ctx = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) || ctx;
+  }
+  let hi = 0;
+  let lo = 0;
+  let out = 0;
+  for (const r of reqs.values()) {
+    if (r.tier === 'hi') hi++;
+    else if (r.tier === 'lo') lo++;
+    out += r.out;
+  }
+  return { ctx, hi, lo, out };
+}
 
 // 会话尾巴处在什么阶段，用来推断状态
 function tailOf(entries) {
@@ -155,6 +188,7 @@ function parse(entries) {
     cwd,
     reply,
     tail: tailOf(entries),
+    stats: usageStats(entries),
   };
 }
 
@@ -255,6 +289,7 @@ function list(limit = 20) {
       pid: l ? l.pid : null,
       waitingFor: l && l.status === 'waiting' ? l.waitingFor || '' : '',
       preview: '',
+      stats: null,
     });
   }
   for (const f of files) {
@@ -276,6 +311,7 @@ function list(limit = 20) {
       pid: l ? l.pid : null,
       waitingFor: l && l.status === 'waiting' ? l.waitingFor || '' : '',
       preview: info.reply.replace(/\s+/g, ' ').slice(0, 120),
+      stats: info.stats,
     };
     // 同一个会话已经占过位（文件比频道登记晚落盘）——换成有内容的完整行
     const at = out.findIndex((o) => o.id === f.id);
@@ -299,4 +335,4 @@ function pidFor(id) {
   return l ? l.pid : null;
 }
 
-module.exports = { list, reply, parse, statusOf, channelFor, pidFor, ROOT };
+module.exports = { list, reply, parse, statusOf, tierOf, usageStats, channelFor, pidFor, ROOT };

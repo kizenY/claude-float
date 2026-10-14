@@ -21,6 +21,7 @@ Claude Code runs in a terminal, which means switching windows just to check whet
 - **Claude / Codex, one click apart** — the header toggle switches the whole widget between the two: session list, theme color, quick-launch command and reply plumbing
 - **Session list** — reads `~/.claude/projects/*/*.jsonl` (read-only), shows your recent sessions
 - **Live status** per session: **Working** / **Waiting for you** (Claude asked a question, plan approval, long-running tool call) / how long ago the last reply came. Prefers the status Claude Code itself writes to `~/.claude/sessions/<pid>.json`; falls back to guessing from the transcript when the session isn't running
+- **Usage & model tiers** per session — each row's tail shows the **high/low-tier request counts** (counted from the model the API actually served: opus·glm-strong = high, haiku·glm-flash = low — with a routing gateway like jev-gateway you can see at a glance which tier each session's requests landed on) and a **context-usage bar** (against a 200k window; turns red past 80% as a `/compact` hint). Hover for exact token counts
 - **Click a row**:
   - session still running → toggle its terminal between foreground/background (click again while in front to minimize)
   - session already exited → opens a fresh PowerShell terminal in the session's original directory and runs `claude --resume <id>`
@@ -107,12 +108,20 @@ One directory per pet, containing `pet.json` plus a spritesheet (PNG / WebP) —
 - Frame indices count left-to-right, top-to-bottom. Built-in animation rows: 0 idle · 1 run right · 2 run left · 3 wave · 4 jump · 5 sad · 6 waiting · 7 run in place · 8 review. `animations` is optional and overrides/adds tracks (fps defaults to 8; `loop: false` plays once, then falls back to idle)
 - The session tray sits permanently above the pet: waiting-first ordering, colored status dots; just-finished sessions linger as "idle · N min ago" until opened, working sessions always shown; opening a waiting/idle row marks it handled and it leaves the tray (it returns automatically when active again). Sessions waiting on you also show a count badge on the pet. Position, on/off switch and the selected pet are all in the tray menu; drag the pet anywhere, double-click to hide
 
+### Gateway-wide stats (optional)
+
+The per-row tier counts are **per session**. The widget can also show one line of **gateway-wide** stats near the bottom (high/low-tier split, how many requests the router actually judged, average latency, online status). The data comes from a local routing gateway's `gateway.log` (a gateway that routes requests to high/low-tier models by complexity; its log has lines like `route=… score=…`). No such gateway? Just skip this — the line stays hidden and nothing else changes. Point the widget at the log either way:
+
+- set `CLAUDE_FLOAT_JEV_LOG` to the `gateway.log` path, or
+- put it in `~/.claude-float/jev.json`: `{ "log": "E:\\path\\to\\gateway.log" }`
+
 ### Environment variables
 
 | Variable | Purpose |
 |---|---|
 | `CLAUDE_FLOAT_PROJECTS` | Comma-separated keywords; only show sessions whose project directory name matches, e.g. `pawkit,lab` |
 | `CLAUDE_FLOAT_CODEX_EXCLUDE` | Codex mode: comma-separated keywords; hide sessions whose working directory matches. Defaults to the author's `e:\agent-cluster` (other agents on the same machine share `~/.codex/sessions`) |
+| `CLAUDE_FLOAT_JEV_LOG` | Path to a routing gateway's `gateway.log`; shows the gateway-wide stats line at the bottom (or use `~/.claude-float/jev.json`) |
 | `CLAUDE_FLOAT_SPAWN_CMD` | Debug: launch this instead of `cf.cmd` from quick-launch |
 | `CLAUDE_FLOAT_SNAPSHOT` | Debug: save a screenshot to this path on startup |
 | `CLAUDE_FLOAT_QUIT_AFTER_SNAPSHOT` | Debug: quit right after saving the screenshot (scripted smoke tests) |
