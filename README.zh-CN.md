@@ -21,7 +21,8 @@ Claude Code 跑在终端里，看一眼它说完没有、回一句话，都得�
 - **Claude / Codex 一键切换** —— 标题栏的开关一键换形态：会话列表、主题色、快捷启动命令、回复通道整套跟着切
 - **会话列表**：读 `~/.claude/projects/*/*.jsonl`（只读），列出最近会话
 - **状态标注**：每个会话显示 **进行中**（Claude 在干活）/ **等待回复**（Claude 在问你、等你确认计划，多半在等你批准）/ 最后一条回复是多久之前。状态优先用 Claude Code 自己写的 `~/.claude/sessions/<pid>.json`，会话没在跑时才从会话记录推测
-- **用量与档位统计**：每行尾部显示这个会话的 **高/低档请求数**（按 API 响应里的实际模型统计：opus·glm-strong 算高档、haiku·glm-flash 算低档——配合 jev-gateway 这类分流网关，一眼看出每个会话的请求都走了哪档）和 **上下文占用条**（按 200k 窗口，超过 80% 变红，提示该 `/compact` 了）。悬停看具体 token 数
+- **用量与档位统计**：每行尾部显示这个会话的 **高/低档请求数**（按 API 响应里的实际模型统计：opus·glm-strong 算高档、haiku·glm-flash 算低档——如果你在用本地分流网关，一眼看出每个会话的请求都走了哪档）和 **上下文占用条**（按 200k 窗口，超过 80% 变红，提示该 `/compact` 了）。悬停看具体 token 数
+- **订阅用量**（可选）：底部一行显示 GLM Coding Plan 各重置窗口的已用百分比（5 小时窗 + 周窗），悬停看剩余额度和重置时间，点击打开控制台。在 `~/.claude-float/glm.json` 里配置 API key 才显示，没有就不显示
 - **点会话那一行**：
   - 会话还在跑 → 把它的终端窗口在前台/后台间切换（已在前台再点一下就最小化）
   - 会话已结束 → 新开一个 PowerShell 终端，回到会话原目录用 `claude --resume` 恢复
@@ -68,6 +69,8 @@ cf [任何 claude 参数]
 
 首次启动会弹一个开发频道的警告，选「I am using this for local development」继续。不是用 `cf` 启动的会话，回复按钮是半透明的；已经跑起来的会话没法补频道，下次用 `cf` 启动即可。
 
+`cf` 还支持一个可选的分流网关（配置见上文的「分流网关」节）——没有网关配置文件时它就是一条普通的 `claude` 启动命令。
+
 ## 配置
 
 ### 快捷启动目录
@@ -108,14 +111,30 @@ cf [任何 claude 参数]
 - 帧序号从左到右、从上到下数。内置动画行号：0 待机 · 1 向右跑 · 2 向左跑 · 3 挥手 · 4 跳 · 5 失落 · 6 等待 · 7 原地跑 · 8 巡视；`animations` 可选，用来覆盖或新增（省略 `fps` 时 8，`loop: false` 表示播一遍回落待机）
 - 会话托盘常驻在宠物上方：等你的排最前，每条带彩色状态点；刚完成的会话以「空闲 · N 分钟前」留在托盘等候查看，在跑的永远显示；点开 等你/空闲 的会话即算已处理，从托盘消失（等它下次再有动静会自动回来）；等回复的会话还会在宠物头顶挂数字徽章。位置、开关、选中的宠物都记在托盘菜单里；宠物窗口拖哪算哪，双击隐藏
 
-### jev-gateway 全局统计
+### 分流网关（可选）
 
-会话行上的高低档是**每个会话**自己的；浮窗底部还可以显示一行**网关全局**统计（最近几百个请求的高低档、判分比例、平均耗时、在线状态）。数据来自一个本地分流网关的 `gateway.log`（网关按复杂度把请求路由到高档/低档模型，日志里有 `route=… score=…` 这样的行）——没有这类网关就不用配，这一行不显示，其他功能不受影响。日志路径二选一配置：
+浮窗可以配合「按复杂度把请求路由到高档/低档模型」的本地分流网关使用。所有网关配置都放本机，仓库不含任何个人路径：
 
-- 环境变量 `CLAUDE_FLOAT_JEV_LOG` 指向 `gateway.log`，或
-- 写进 `~/.claude-float/jev.json`：`{ "log": "E:\\path\\to\\gateway.log" }`
+`~/.claude-float/gateway.conf`（两行，ASCII）：
 
-不配置就不显示这一行，其他功能不受影响。
+```
+health=http://127.0.0.1:8787/health
+settings=C:\path\to\gateway-settings.json
+```
+
+- 有这个文件时，`cf` 启动前先探测 `health`，活着就把 `settings` 指定的配置文件（建议用 `ANTHROPIC_AUTH_TOKEN`，用 `ANTHROPIC_API_KEY` 会每次弹「custom API key」确认）经 `--settings` 挂给新会话——即「新会话走网关」
+- 没有这个文件 = 纯直连，`cf` 里零网关逻辑
+- 托盘菜单的 **「新会话走 jev 网关」** 开关（配了 gateway.conf 才出现）控制这个行为：落地为创建/删除 `~/.claude-float/gateway-off` 文件，只影响新起的会话，已在跑的不变
+
+### 订阅用量（GLM Coding Plan）
+
+`~/.claude-float/glm.json`：
+
+```json
+{ "apiKey": "你的 Coding Plan API key" }
+```
+
+浮窗底部显示一行各重置窗口的已用百分比（主进程每分钟拉一次 [官方用量接口](https://docs.bigmodel.cn/cn/coding-plan/overview)）。Z.ai 用户加 `"endpoint": "https://api.z.ai"`。没有这个文件就不显示这一行，其他功能不受影响。
 
 ### 环境变量
 
@@ -123,7 +142,6 @@ cf [任何 claude 参数]
 |---|---|
 | `CLAUDE_FLOAT_PROJECTS` | 逗号分隔的关键字，只显示项目目录名包含这些关键字的会话，如 `pawkit,lab` |
 | `CLAUDE_FLOAT_CODEX_EXCLUDE` | Codex 形态：逗号分隔的关键字，工作目录命中即隐藏。默认 `e:\agent-cluster`（同一台机器上其他 Agent 共用 `~/.codex/sessions`，不串台） |
-| `CLAUDE_FLOAT_JEV_LOG` | jev-gateway 的 `gateway.log` 路径，配了浮窗底部才显示网关全局统计（也可用 `~/.claude-float/jev.json`） |
 | `CLAUDE_FLOAT_SPAWN_CMD` | 调试：快捷启动改拉这个命令，排查 spawn 问题时用 |
 | `CLAUDE_FLOAT_SNAPSHOT` | 调试：启动后截图到该路径 |
 | `CLAUDE_FLOAT_QUIT_AFTER_SNAPSHOT` | 调试：截图完自动退出（脚本化 smoke 用） |

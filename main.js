@@ -9,7 +9,7 @@ const edgeTts = require('./edge-tts');
 const reply = require('./reply');
 const focus = require('./focus');
 const petMod = require('./pet');
-const jev = require('./jev');
+const glmUsage = require('./glm-usage');
 
 const COLLAPSED_HEIGHT = 40;
 // 宠物窗口 = 一帧 192x208 × zoom 0.78（和 pet.css 对齐）
@@ -125,6 +125,28 @@ function toggleWindow() {
   else { win.show(); win.focus(); }
 }
 
+// ---- jev 网关开关：控制 cf 新起的会话走不走本地分流网关 ----
+// 网关健康检查地址和 --settings 配置文件都在 ~/.claude-float/gateway.conf（cf.cmd 读同一个文件）；
+// 开关落地为 ~/.claude-float/gateway-off（存在=关），cmd 一行 if exist 就能识别。
+// 没配 gateway.conf 的环境（绝大多数开源用户）整个菜单项都不出现
+const GATEWAY_CONF = path.join(os.homedir(), '.claude-float', 'gateway.conf');
+const GATEWAY_OFF = path.join(os.homedir(), '.claude-float', 'gateway-off');
+
+function gatewayConfigured() {
+  try { return fs.statSync(GATEWAY_CONF).isFile(); } catch { return false; }
+}
+
+function gatewayEnabled() {
+  return gatewayConfigured() && !fs.existsSync(GATEWAY_OFF);
+}
+
+function setGatewayEnabled(on) {
+  try {
+    if (on) fs.unlinkSync(GATEWAY_OFF);
+    else fs.writeFileSync(GATEWAY_OFF, '');
+  } catch { /* 已是目标状态 */ }
+}
+
 function refreshTray() {
   if (!tray || !win || win.isDestroyed()) return;
   const p = prefs();
@@ -143,8 +165,18 @@ function refreshTray() {
     },
     { type: 'separator' },
   ] : [];
+  const gwItems = gatewayConfigured() ? [
+    {
+      label: '新会话走 jev 网关',
+      type: 'checkbox',
+      checked: gatewayEnabled(),
+      click: (item) => { setGatewayEnabled(item.checked); refreshTray(); },
+    },
+    { type: 'separator' },
+  ] : [];
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: win.isVisible() ? '隐藏浮窗' : '显示浮窗', click: toggleWindow },
+    ...gwItems,
     ...petItems,
     { type: 'separator' },
     {
@@ -332,7 +364,7 @@ ipcMain.handle('session:spawn', (_e, dir, mode) => {
 });
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);
 ipcMain.handle('tts:synthesize', (_e, text, opts) => edgeTts.synthesize(String(text), opts));
-ipcMain.handle('jev:stats', () => jev.stats());
+ipcMain.handle('usage:plan', () => glmUsage.usage());
 ipcMain.handle('win:pin', () => {
   const next = !win.isAlwaysOnTop();
   win.setAlwaysOnTop(next, 'screen-saver');

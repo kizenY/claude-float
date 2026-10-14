@@ -21,7 +21,8 @@ Claude Code runs in a terminal, which means switching windows just to check whet
 - **Claude / Codex, one click apart** — the header toggle switches the whole widget between the two: session list, theme color, quick-launch command and reply plumbing
 - **Session list** — reads `~/.claude/projects/*/*.jsonl` (read-only), shows your recent sessions
 - **Live status** per session: **Working** / **Waiting for you** (Claude asked a question, plan approval, long-running tool call) / how long ago the last reply came. Prefers the status Claude Code itself writes to `~/.claude/sessions/<pid>.json`; falls back to guessing from the transcript when the session isn't running
-- **Usage & model tiers** per session — each row's tail shows the **high/low-tier request counts** (counted from the model the API actually served: opus·glm-strong = high, haiku·glm-flash = low — with a routing gateway like jev-gateway you can see at a glance which tier each session's requests landed on) and a **context-usage bar** (against a 200k window; turns red past 80% as a `/compact` hint). Hover for exact token counts
+- **Usage & model tiers** per session — each row's tail shows the **high/low-tier request counts** (counted from the model the API actually served: opus·glm-strong = high, haiku·glm-flash = low — handy if you route through a local model-routing gateway) and a **context-usage bar** (against a 200k window; turns red past 80% as a `/compact` hint). Hover for exact token counts
+- **Subscription usage** (optional) — one line at the bottom showing the GLM Coding Plan quota per reset window (5-hour + weekly); hover for remaining credits and reset times, click to open the console. Only shows up when you put an API key in `~/.claude-float/glm.json`
 - **Click a row**:
   - session still running → toggle its terminal between foreground/background (click again while in front to minimize)
   - session already exited → opens a fresh PowerShell terminal in the session's original directory and runs `claude --resume <id>`
@@ -68,6 +69,8 @@ cf [any normal claude arguments]
 
 The first launch shows a one-time development-channels warning — pick "I am using this for local development". Sessions not started with `cf` show a dimmed reply button; there's no way to attach a channel to an already-running session.
 
+`cf` also supports an optional routing gateway (see "Routing gateway" above) — without a gateway.conf it's just a plain `claude` launcher.
+
 ## Configuration
 
 ### Quick-launch directories
@@ -108,12 +111,30 @@ One directory per pet, containing `pet.json` plus a spritesheet (PNG / WebP) —
 - Frame indices count left-to-right, top-to-bottom. Built-in animation rows: 0 idle · 1 run right · 2 run left · 3 wave · 4 jump · 5 sad · 6 waiting · 7 run in place · 8 review. `animations` is optional and overrides/adds tracks (fps defaults to 8; `loop: false` plays once, then falls back to idle)
 - The session tray sits permanently above the pet: waiting-first ordering, colored status dots; just-finished sessions linger as "idle · N min ago" until opened, working sessions always shown; opening a waiting/idle row marks it handled and it leaves the tray (it returns automatically when active again). Sessions waiting on you also show a count badge on the pet. Position, on/off switch and the selected pet are all in the tray menu; drag the pet anywhere, double-click to hide
 
-### Gateway-wide stats (optional)
+### Routing gateway (optional)
 
-The per-row tier counts are **per session**. The widget can also show one line of **gateway-wide** stats near the bottom (high/low-tier split, how many requests the router actually judged, average latency, online status). The data comes from a local routing gateway's `gateway.log` (a gateway that routes requests to high/low-tier models by complexity; its log has lines like `route=… score=…`). No such gateway? Just skip this — the line stays hidden and nothing else changes. Point the widget at the log either way:
+The widget plays nice with a local gateway that routes requests to high/low-tier models by complexity. All gateway wiring stays on your machine — the repo contains no personal paths.
 
-- set `CLAUDE_FLOAT_JEV_LOG` to the `gateway.log` path, or
-- put it in `~/.claude-float/jev.json`: `{ "log": "E:\\path\\to\\gateway.log" }`
+`~/.claude-float/gateway.conf` (two lines, ASCII):
+
+```
+health=http://127.0.0.1:8787/health
+settings=C:\path\to\gateway-settings.json
+```
+
+- With this file, `cf` probes `health` before launching; if it answers, the JSON profile at `settings` is attached to the new session via `--settings` (use `ANTHROPIC_AUTH_TOKEN` in the profile — `ANTHROPIC_API_KEY` triggers Claude Code's "custom API key" approval prompt on every session)
+- No file = plain direct sessions, zero gateway logic in `cf`
+- The tray menu's **"route new sessions through the gateway"** switch (only appears when gateway.conf exists) toggles this by creating/deleting `~/.claude-float/gateway-off`; it only affects sessions started afterwards
+
+### Subscription usage (GLM Coding Plan)
+
+`~/.claude-float/glm.json`:
+
+```json
+{ "apiKey": "your Coding Plan API key" }
+```
+
+One line at the widget's bottom shows the used percentage per reset window (main process polls the [official usage endpoint](https://docs.bigmodel.cn/cn/coding-plan/overview) once a minute). On Z.ai add `"endpoint": "https://api.z.ai"`. No file → the line stays hidden, nothing else changes.
 
 ### Environment variables
 
@@ -121,7 +142,6 @@ The per-row tier counts are **per session**. The widget can also show one line o
 |---|---|
 | `CLAUDE_FLOAT_PROJECTS` | Comma-separated keywords; only show sessions whose project directory name matches, e.g. `pawkit,lab` |
 | `CLAUDE_FLOAT_CODEX_EXCLUDE` | Codex mode: comma-separated keywords; hide sessions whose working directory matches. Defaults to the author's `e:\agent-cluster` (other agents on the same machine share `~/.codex/sessions`) |
-| `CLAUDE_FLOAT_JEV_LOG` | Path to a routing gateway's `gateway.log`; shows the gateway-wide stats line at the bottom (or use `~/.claude-float/jev.json`) |
 | `CLAUDE_FLOAT_SPAWN_CMD` | Debug: launch this instead of `cf.cmd` from quick-launch |
 | `CLAUDE_FLOAT_SNAPSHOT` | Debug: save a screenshot to this path on startup |
 | `CLAUDE_FLOAT_QUIT_AFTER_SNAPSHOT` | Debug: quit right after saving the screenshot (scripted smoke tests) |

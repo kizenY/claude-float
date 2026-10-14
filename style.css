@@ -151,15 +151,16 @@ body {
 .ctx i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 .ctx.hot i { background: #c0392b; }
 
-/* jev-gateway 全局统计行（配了日志路径才有） */
-.jev {
+/* 订阅用量行（~/.claude-float/glm.json 配了 apiKey 才显示） */
+.plan {
   flex: none;
   padding: 3px 12px 4px;
   border-top: 1px solid var(--line);
   font-size: 10.5px; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer;
 }
-.jev.on { color: var(--accent); }
+.plan:hover { color: var(--accent); }
 .chip { font-size: 11px; padding: 0 6px; border-radius: 9px; }
 .chip.working { color: var(--accent); background: var(--accent-soft); }
 .chip.waiting { color: var(--wait); background: var(--wait-soft); font-weight: 600; }

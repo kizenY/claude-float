@@ -203,20 +203,40 @@ async function refresh() {
   } catch (e) {
     console.error(e);
   }
-  refreshJev();
+  refreshPlan();
 }
 
-// ---- jev-gateway 全局统计：底部一行，没配日志路径或读不到就不显示 ----
-async function refreshJev() {
+// ---- 订阅用量（GLM Coding Plan）：底部一行各重置窗口的已用百分比 ----
+// ~/.claude-float/glm.json 配了 apiKey 才显示；主进程 60s 拉一次，这里每轮拿缓存
+const PLAN_CONSOLE_URL = 'https://open.bigmodel.cn/console';
+
+function fmtReset(ms) {
+  const d = new Date(ms);
+  const sameDay = new Date().toDateString() === d.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderPlan(u) {
+  const el = $('plan');
+  if (!u || !u.windows || !u.windows.length) { el.hidden = true; return; }
+  el.hidden = false;
+  const label = u.level ? `GLM ${u.level}` : 'GLM';
+  el.textContent = [label, ...u.windows.map((w) => `已用 ${w.pct}%`)].join(' · ');
+  el.title = [`${label} 订阅用量`,
+    ...u.windows.map((w, i) => {
+      const left = w.remaining != null ? ` · 剩 ${(w.remaining / 1000).toFixed(1)}k` : '';
+      const reset = w.resetAt ? ` · ${fmtReset(w.resetAt)} 重置` : '';
+      return `窗口 ${i + 1}：已用 ${w.pct}%${left}${reset}`;
+    }),
+  ].join('\n');
+}
+
+async function refreshPlan() {
   try {
-    const st = await window.api.jevStats();
-    const el = $('jev');
-    if (!st) { el.hidden = true; return; }
-    el.hidden = false;
-    el.classList.toggle('on', st.online);
-    el.textContent = `${st.online ? '●' : '○'} Jev 高${st.hi}/低${st.lo} · 判分 ${st.judged}/${st.total} · 均 ${(st.avgMs / 1000).toFixed(1)}s`;
-    el.title = `jev-gateway 最近 ${st.total} 个请求（日志尾部窗口）· 最后请求 ${ago(st.lastAt)}\n高低档口径：opus·glm-strong=高，haiku·glm-flash=低`;
-  } catch { /* 网关行不显示就算了 */ }
+    renderPlan(await window.api.planUsage());
+  } catch { /* 拉不到就藏起来 */ }
 }
 
 // 点列表项：有窗口就切到会话的终端前台/后台；会话已结束则新开终端恢复它（快捷回复走 ↩ 按钮，不走这里）
@@ -452,6 +472,7 @@ $('composer-input').addEventListener('keydown', (e) => {
 });
 
 $('btn-close').addEventListener('click', () => window.api.hide());
+$('plan').addEventListener('click', () => { window.open(PLAN_CONSOLE_URL); }); // 主进程转系统浏览器
 
 // ---- 快捷启动：一键在常用目录起一个会话（Claude 形态走 cf，Codex 形态走 codex） ----
 let quickDirList = [];
