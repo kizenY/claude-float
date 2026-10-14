@@ -288,6 +288,11 @@ ipcMain.handle('dirs:list', () => QUICK_DIRS);
 function cleanSpawnEnv() {
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (/^CLAUDE/i.test(key)) delete env[key];
+  // 浮窗若从 Claude Code 会话里启动，还会继承 CC 注入的 NO_COLOR=1（不以 CLAUDE 开头，
+  // 上面削不掉；10/14 排查「浮窗点行新开的终端里 claude 全黑白」就是它）。
+  // 用户级/系统级注册表里没有 NO_COLOR，可放心摘掉；FORCE_COLOR=0 同理（=1/2/3 是强制开色，保留）。
+  delete env.NO_COLOR;
+  if (env.FORCE_COLOR === '0') delete env.FORCE_COLOR;
   return env;
 }
 
