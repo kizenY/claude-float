@@ -200,7 +200,9 @@ function renderPlan(u) {
   if (!u || !u.windows || !u.windows.length) { el.hidden = true; return; }
   el.hidden = false;
   const label = (i) => WINDOW_LABELS[i] || `window ${i + 1}`;
-  el.textContent = u.windows.map((w, i) => `${label(i)} ${w.pct}%`).join(' · ');
+  el.textContent = u.windows
+    .map((w, i) => `${label(i)} ${w.pct}%${w.resetAt ? ` · ${fmtReset(w.resetAt)} 重置` : ''}`)
+    .join('  ·  ');
   el.title = ['GLM 订阅用量',
     ...u.windows.map((w, i) => {
       const left = w.remaining != null ? ` · 剩 ${(w.remaining / 1000).toFixed(1)}k` : '';

@@ -133,7 +133,7 @@ settings=C:\path\to\gateway-settings.json
 { "apiKey": "你的 Coding Plan API key" }
 ```
 
-浮窗底部显示一行 `5-hour 64% · weekly 38%`（各重置窗口的已用百分比，主进程每分钟拉一次 [官方用量接口](https://docs.bigmodel.cn/cn/coding-plan/overview)）。Z.ai 用户加 `"endpoint": "https://api.z.ai"`。没有这个文件就不显示这一行，其他功能不受影响。
+浮窗底部显示一行 `5-hour 64% · 18:24 重置 · weekly 38% · 10/21 重置`（各重置窗口的已用百分比和重置时间，主进程每分钟拉一次 [官方用量接口](https://docs.bigmodel.cn/cn/coding-plan/overview)）。Z.ai 用户加 `"endpoint": "https://api.z.ai"`。没有这个文件就不显示这一行，其他功能不受影响。
 
 ### 环境变量
 

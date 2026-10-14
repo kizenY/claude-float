@@ -133,7 +133,7 @@ settings=C:\path\to\gateway-settings.json
 { "apiKey": "your Coding Plan API key" }
 ```
 
-One line at the widget's bottom shows `5-hour 64% · weekly 38%` (used percentage per reset window; the main process polls the [official usage endpoint](https://docs.bigmodel.cn/cn/coding-plan/overview) once a minute). On Z.ai add `"endpoint": "https://api.z.ai"`. No file → the line stays hidden, nothing else changes.
+One line at the widget's bottom shows `5-hour 64% · 18:24 reset · weekly 38% · 10/21 reset` (used percentage and reset time per window; the main process polls the [official usage endpoint](https://docs.bigmodel.cn/cn/coding-plan/overview) once a minute). On Z.ai add `"endpoint": "https://api.z.ai"`. No file → the line stays hidden, nothing else changes.
 
 ### Environment variables
 
