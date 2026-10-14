@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<!-- 精灵图以 data: URL 注入，所以 img-src 要放行 data: -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: file:">
+<title>Claude 宠物</title>
+<link rel="stylesheet" href="pet.css">
+</head>
+<body>
+<ul id="tray" hidden></ul>
+<div id="tray-empty" hidden>没有进行中或等你的会话</div>
+<!-- 快捷目录卡片：默认隐藏，点宠物本体切换 -->
+<div id="quick" hidden></div>
+<div id="pet"></div>
+<script src="pet-renderer.js"></script>
+</body>
+</html>

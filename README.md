@@ -27,6 +27,7 @@ Claude Code runs in a terminal, which means switching windows just to check whet
 - **Read aloud** (speaker icon) — speaks the latest reply; click again, click the stop button, or press `Esc` to stop. Markdown is cleaned up before speaking: code blocks become "code omitted", links speak their text only, paths speak just the filename, tables are read row by row
 - **Quick reply** (orange arrow, sessions started with `cf`) — type in the widget, `Enter` to send / `Shift+Enter` newline / `Esc` cancel. Messages go into the session through Claude Code's official [Channels](https://code.claude.com/docs/en/channels) (research preview) — no window switching, no keystroke simulation into your terminal. Idle Claude replies immediately; a busy Claude gets it on the next turn
 - **Quick launch** — bottom buttons start a new `cf` session in your favorite directories (new PowerShell window; the window stays at the prompt after Claude exits so you can scroll back)
+- **Desktop pet** — a little companion squatting in a screen corner that mirrors your sessions: runs in place while a session works, tilts its head when one waits for you, jumps to celebrate a finished task, and wears a count badge when sessions await your input. **A session tray sits above the pet** (working / waiting / just-finished sessions; none → just the pet): waiting-first ordering, colored status dots; finished sessions linger as "idle" until you've looked at them, click a row to jump to that terminal (opening a waiting/idle row marks it handled and it leaves the tray). Click the pet to wave, double-click to hide (tray menu brings it back). Reads Codex pet packs from `~/.codex/pets/` out of the box; your own pets go into `~/.claude-float/pets/`. Toggle and pick pets from the tray menu
 - **Widget niceties** — pin / collapse to a 40px bar / hide to tray; position, size and pinned state are remembered. Tray icon toggles visibility; tray menu has optional "run at login" (off by default)
 - **Text-to-speech**: online neural voices by default (same voices as Edge "Read Aloud" — natural-sounding), or offline system voices as fallback
 
@@ -81,6 +82,31 @@ The first launch shows a one-time development-channels warning — pick "I am us
 
 Without this file you get a single `home` button. Restart the widget after editing.
 
+### Desktop pet
+
+The pet window scans two directories; your own win when ids collide:
+
+| Directory | Purpose |
+|---|---|
+| `~/.claude-float/pets/<id>/` | your own pets |
+| `~/.codex/pets/<id>/` | [Codex CLI](https://developers.openai.com/codex/) pets, imported automatically — nothing to do |
+
+One directory per pet, containing `pet.json` plus a spritesheet (PNG / WebP) — same format as CodeX:
+
+```json
+{
+  "displayName": "Pingan",
+  "description": "A plush puppy",
+  "spritesheetPath": "spritesheet.png",
+  "frame": { "width": 192, "height": 208, "columns": 8, "rows": 9 },
+  "animations": { "wave": { "frames": [24, 25, 26, 27], "fps": 7, "loop": false } }
+}
+```
+
+- The spritesheet is cut on a grid: each frame is `width x height` pixels, `columns x rows` cells must tile the image exactly. `frame` is optional — defaults to 192x208 frames, 8 columns, with rows derived from the image height
+- Frame indices count left-to-right, top-to-bottom. Built-in animation rows: 0 idle · 1 run right · 2 run left · 3 wave · 4 jump · 5 sad · 6 waiting · 7 run in place · 8 review. `animations` is optional and overrides/adds tracks (fps defaults to 8; `loop: false` plays once, then falls back to idle)
+- The session tray sits permanently above the pet: waiting-first ordering, colored status dots; just-finished sessions linger as "idle · N min ago" until opened, working sessions always shown; opening a waiting/idle row marks it handled and it leaves the tray (it returns automatically when active again). Sessions waiting on you also show a count badge on the pet. Position, on/off switch and the selected pet are all in the tray menu; drag the pet anywhere, double-click to hide
+
 ### Environment variables
 
 | Variable | Purpose |
@@ -125,6 +151,7 @@ npm start       # launch the widget
 ```
 main.js             Electron main process: window, tray, IPC
 renderer.js         widget UI + speech orchestration
+pet.js / pet.html / pet-renderer.js   desktop pet: pack loading + pet window
 sessions.js         reads ~/.claude/projects transcripts + status guessing
 codex-sessions.js   reads ~/.codex/sessions rollouts + status guessing + live-process matching
 channel/server.js   Claude Code channel server (quick-reply entry point)

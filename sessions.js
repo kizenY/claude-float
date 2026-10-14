@@ -246,7 +246,8 @@ function list(limit = 20) {
       id: sid,
       file: '',
       mtime: ch.updatedAt || now,
-      title: '(新会话)',
+      // transcript 还没落盘的会话只有频道登记可看；带上项目名，不然一屏「(新会话)」分不清谁是谁
+      title: ch.cwd ? `${path.basename(ch.cwd)} · 新会话` : '(新会话)',
       channel: true,
       project: ch.cwd ? path.basename(ch.cwd) : '',
       cwd: ch.cwd || '',

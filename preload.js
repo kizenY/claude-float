@@ -14,4 +14,10 @@ contextBridge.exposeInMainWorld('api', {
   send: (id, text, mode) => ipcRenderer.invoke('sessions:send', { id, text, mode }),
   focus: (id, mode) => ipcRenderer.invoke('session:focus', id, mode),
   setFocusable: (on) => ipcRenderer.invoke('win:focusable', on),
+  petLoad: () => ipcRenderer.invoke('pet:load'),
+  petSessions: () => ipcRenderer.invoke('pet:sessions'),
+  petExpand: (width, height) => ipcRenderer.invoke('pet:expand', width, height),
+  petDismiss: (key) => ipcRenderer.invoke('pet:dismiss', key),
+  petMoveBy: (dx, dy) => ipcRenderer.invoke('pet:move', dx, dy),
+  petHide: () => ipcRenderer.invoke('pet:hide'),
 });

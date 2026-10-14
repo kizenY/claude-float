@@ -8,11 +8,16 @@ const codex = require('./codex-sessions');
 const edgeTts = require('./edge-tts');
 const reply = require('./reply');
 const focus = require('./focus');
+const petMod = require('./pet');
 
 const COLLAPSED_HEIGHT = 40;
+// 宠物窗口 = 一帧 192x208 × zoom 0.78（和 pet.css 对齐）
+const PET_WIDTH = 150;
+const PET_HEIGHT = 162;
 
 let win;
 let tray;
+let petWin = null;
 let expandedHeight = null;
 
 function statePath() {
@@ -89,7 +94,7 @@ function createWindow() {
   win.on('resized', saveBounds);
   win.on('show', refreshTray);
   win.on('hide', refreshTray);
-  if (process.env.CLAUDE_FLOAT_SNAPSHOT) snapshot(process.env.CLAUDE_FLOAT_SNAPSHOT);
+  if (process.env.CLAUDE_FLOAT_SNAPSHOT) snapshot(win, process.env.CLAUDE_FLOAT_SNAPSHOT);
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 }
 
@@ -122,8 +127,24 @@ function toggleWindow() {
 function refreshTray() {
   if (!tray || !win || win.isDestroyed()) return;
   const p = prefs();
+  const pet = petPrefs();
+  const petItems = PETS.length ? [
+    { label: '桌面宠物', type: 'checkbox', checked: pet.enabled, click: (item) => setPetEnabled(item.checked) },
+    {
+      label: '选择宠物',
+      enabled: PETS.length > 1,
+      submenu: Menu.buildFromTemplate(PETS.map((x) => ({
+        label: x.name,
+        type: 'radio',
+        checked: x.id === pet.id,
+        click: () => switchPet(x.id),
+      }))),
+    },
+    { type: 'separator' },
+  ] : [];
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: win.isVisible() ? '隐藏浮窗' : '显示浮窗', click: toggleWindow },
+    ...petItems,
     { type: 'separator' },
     {
       label: '开机自动运行', type: 'checkbox', checked: p.autostart,
@@ -142,13 +163,13 @@ function createTray() {
 }
 
 // 调试用：加载后截图并打印可用声音
-function snapshot(out) {
-  win.webContents.on('console-message', (e) => console.log('RENDERER', e.message));
-  win.webContents.once('did-finish-load', () => setTimeout(async () => {
-    if (process.env.CLAUDE_FLOAT_SNAPSHOT_JS) {
+function snapshot(target, out) {
+  target.webContents.on('console-message', (e) => console.log('RENDERER', e.message));
+  target.webContents.once('did-finish-load', () => setTimeout(async () => {
+    if (process.env.CLAUDE_FLOAT_SNAPSHOT_JS && target === win) {
       console.log('JS', JSON.stringify(await win.webContents.executeJavaScript(process.env.CLAUDE_FLOAT_SNAPSHOT_JS)));
     }
-    fs.writeFileSync(out, (await win.webContents.capturePage()).toPNG());
+    fs.writeFileSync(out, (await target.webContents.capturePage()).toPNG());
     console.log('SNAPSHOT', out);
     if (process.env.CLAUDE_FLOAT_QUIT_AFTER_SNAPSHOT) app.quit(); // 调试：截图完自动退出，脚本化 smoke 用
   }, 2500));
@@ -260,13 +281,23 @@ ipcMain.handle('dirs:list', () => QUICK_DIRS);
 // 所以经 WScript.Shell.Run 走 ShellExecute，系统会给新控制台分配真实控制台句柄。
 // 也不要用 detached（实测静默吞脚本）或 cmd 的 start（这台机器上拉起 .cmd 不稳定）。
 // spawn-cf.vbs 里用 powershell -NoExit 起，claude 退出后窗口留在提示符，方便回看记录。
+// 起会话前剥掉 CLAUDE* 环境变量：浮窗若从 Claude Code 会话里启动（调试重启很常见），
+// 会继承 CLAUDECODE / CLAUDE_CODE_CHILD_SESSION / CLAUDE_CODE_SESSION_ID 等嵌套标记，
+// 新起的 claude 就被当成别的会话的 child session——不写 transcript、不写状态登记，
+// 浮窗和宠物全都看不到它（10/14 实锤过）。ANTHROPIC_* 不受影响，认证仍由 cf.cmd/jev settings 管
+function cleanSpawnEnv() {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) if (/^CLAUDE/i.test(key)) delete env[key];
+  return env;
+}
+
 function spawnCfTerminal(dir, extraArgs = '') {
   // 调试后门：设了 CLAUDE_FLOAT_SPAWN_CMD 就改拉别的 payload（排查 spawn 问题时用），正常运行永远走 cf.cmd
   const cfCmd = process.env.CLAUDE_FLOAT_SPAWN_CMD || path.join(__dirname, 'cf.cmd'); // 全路径，不依赖 PATH（浮窗进程的环境可能是旧 PATH）
   const hop = path.join(__dirname, 'spawn-cf.vbs');
   const args = [hop, dir, cfCmd];
   if (extraArgs) args.push(extraArgs);
-  spawn('C:\\Windows\\System32\\wscript.exe', args, { stdio: 'ignore' }).unref();
+  spawn('C:\\Windows\\System32\\wscript.exe', args, { env: cleanSpawnEnv(), stdio: 'ignore' }).unref();
 }
 
 // ---- Codex 终端：同一个 wscript 跳板，换成 codex 命令 ----
@@ -282,7 +313,7 @@ function spawnCodexTerminal(dir, extraArgs = '') {
   const hop = path.join(__dirname, 'spawn-cf.vbs'); // 通用终端跳板：给新控制台真实句柄
   const args = [hop, dir, CODEX_CMD];
   if (extraArgs) args.push(extraArgs);
-  spawn('C:\\Windows\\System32\\wscript.exe', args, { stdio: 'ignore' }).unref();
+  spawn('C:\\Windows\\System32\\wscript.exe', args, { env: cleanSpawnEnv(), stdio: 'ignore' }).unref();
 }
 
 ipcMain.handle('session:spawn', (_e, dir, mode) => {
@@ -316,6 +347,164 @@ ipcMain.handle('win:collapse', () => {
 });
 ipcMain.handle('win:hide', () => win.hide());
 
+// ---- 桌面宠物：独立小窗，跟着会话状态换表情（跑动/歪头/庆祝），拖拽不抢焦点 ----
+// 宠物包从 ~/.claude-float/pets/ 和 ~/.codex/pets/（CodeX 的宠物自动导入）里找，启动时扫一次
+const PETS = petMod.scanPets(petMod.defaultDirs());
+let petStatusCache = { working: false, waiting: false, finishedAt: 0 };
+// 托盘展开时窗口会变大，petX/petY 始终记「宠物本体」（收起态）的左上角
+let petOrigin = null;
+let petExpanded = null; // {width, height} | null
+
+// 点开过的会话（等待中/刚完成）：当作已处理，不再进托盘；它再次活跃就解除标记
+const petDismissed = new Set(); // 'claude:<id>' / 'codex:<id>'
+// 刚完成的会话（working→idle）：留在托盘「空闲」等候查看，直到被点开或再次开跑
+const petDone = new Set();
+const petPrevStatus = new Map(); // key -> 上一轮状态（给「刚完成」检测用）
+
+function petListItems() {
+  // claude + codex 两边合并，各取最近几条；托盘显示 在跑 / 等你 / 刚完成（空闲等候）
+  try {
+    const claudeItems = sessions.list(10).map((s) => ({ ...s, mode: 'claude' }));
+    const codexItems = codex.list(10).map((s) => ({ ...s, mode: 'codex' }));
+    const all = [...claudeItems, ...codexItems];
+    const seen = new Set();
+    for (const s of all) {
+      const key = `${s.mode}:${s.id}`;
+      seen.add(key);
+      const prev = petPrevStatus.get(key);
+      if (prev === 'working' && s.status === 'idle') petDone.add(key);
+      else if (s.status !== 'idle') petDone.delete(key); // 又开跑了，从「等候」回到「进行中」
+      if (s.status === 'working') petDismissed.delete(key); // 开跑的会话永远显示，dismiss 压不住它
+      petPrevStatus.set(key, s.status);
+    }
+    for (const key of [...petDone.keys(), ...petPrevStatus.keys()]) {
+      if (!seen.has(key)) { // 会话掉出最近列表就不跟踪了
+        petDone.delete(key);
+        petPrevStatus.delete(key);
+        petDismissed.delete(key);
+      }
+    }
+    return all.filter((s) => {
+      const key = `${s.mode}:${s.id}`;
+      if (s.status === 'working') return true;
+      if (petDismissed.has(key)) return false;
+      return s.status === 'waiting' || petDone.has(key);
+    }).sort((a, b) => b.mtime - a.mtime);
+  } catch {
+    return [];
+  }
+}
+
+function petPrefs() {
+  const s = loadState();
+  return { enabled: s.petEnabled !== false, id: s.petId || (PETS[0] && PETS[0].id) || null };
+}
+
+function createPetWindow() {
+  if (petWin || !PETS.length) return;
+  const { workArea } = screen.getPrimaryDisplay();
+  const saved = { x: loadState().petX, y: loadState().petY };
+  const pos = onSomeDisplay(saved)
+    ? { x: saved.x, y: saved.y }
+    : { x: workArea.x + workArea.width - PET_WIDTH - 6, y: workArea.y + workArea.height - PET_HEIGHT - 6 };
+  petOrigin = pos;
+  petWin = new BrowserWindow({
+    ...pos,
+    width: PET_WIDTH,
+    height: PET_HEIGHT,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    focusable: false, // 永远不抢焦点，鼠标事件照常（拖拽、点击）
+    title: 'Claude 宠物',
+    webPreferences: { preload: path.join(__dirname, 'preload.js') },
+  });
+  petWin.setAlwaysOnTop(true, 'screen-saver');
+  petWin.loadFile('pet.html');
+  if (process.env.CLAUDE_FLOAT_PET_SNAPSHOT) snapshot(petWin, process.env.CLAUDE_FLOAT_PET_SNAPSHOT);
+  petWin.on('moved', savePetBounds);
+  petWin.once('ready-to-show', () => { if (petPrefs().enabled) petWin.showInactive(); });
+}
+
+// 拖拽/展开都从 petOrigin（宠物本体左上角）推窗口位置，位置状态也只存它
+function petWindowPos() {
+  const { workArea } = screen.getPrimaryDisplay();
+  const offX = petExpanded ? petExpanded.width - PET_WIDTH : 0;
+  const offY = petExpanded ? petExpanded.height - PET_HEIGHT : 0;
+  return {
+    x: Math.min(Math.max(workArea.x, petOrigin.x - offX), workArea.x + workArea.width - (PET_WIDTH + offX)),
+    y: Math.min(Math.max(workArea.y, petOrigin.y - offY), workArea.y + workArea.height - (PET_HEIGHT + offY)),
+  };
+}
+
+function applyPetBounds() {
+  if (!petWin || petWin.isDestroyed()) return;
+  petWin.setBounds({
+    ...petWindowPos(),
+    width: PET_WIDTH + (petExpanded ? petExpanded.width - PET_WIDTH : 0),
+    height: PET_HEIGHT + (petExpanded ? petExpanded.height - PET_HEIGHT : 0),
+  });
+}
+
+function savePetBounds() {
+  if (!petWin || petWin.isDestroyed()) return;
+  const b = petWin.getBounds();
+  petOrigin = { x: b.x + (petExpanded ? petExpanded.width - PET_WIDTH : 0), y: b.y + (petExpanded ? petExpanded.height - PET_HEIGHT : 0) };
+  patchState({ petX: petOrigin.x, petY: petOrigin.y });
+}
+
+function setPetEnabled(on) {
+  patchState({ petEnabled: !!on });
+  if (!petWin) createPetWindow();
+  if (petWin) { if (on) petWin.showInactive(); else petWin.hide(); }
+  refreshTray();
+}
+
+function switchPet(id) {
+  patchState({ petId: id });
+  if (petWin) {
+    petWin.reload();
+    if (petPrefs().enabled) petWin.showInactive();
+  }
+}
+
+ipcMain.handle('pet:load', () => {
+  const entry = PETS.find((p) => p.id === petPrefs().id) || PETS[0];
+  if (!entry) return null;
+  const pet = petMod.loadPetManifest(entry.dir, entry.id);
+  const buf = fs.readFileSync(pet.sheetPath);
+  return { pet, sheet: `data:${pet.mime};base64,${buf.toString('base64')}` };
+});
+// 状态只在宠物窗口可见时刷新（省得白读一遍会话记录），隐藏时返回缓存
+// 宠物窗的轮询入口：每次都现算（和浮窗 3s 一轮同量级），renderer 收起时自己用缓存
+ipcMain.handle('pet:sessions', () => {
+  const items = petListItems();
+  petStatusCache = petMod.aggregateStatus(petStatusCache, items, Date.now());
+  return { ...petStatusCache, items };
+});
+// 托盘尺寸自适应：窗口变大变小，锚点始终是宠物本体（右下），超屏就 clamp
+ipcMain.handle('pet:expand', (_e, width, height) => {
+  if (!petWin || petWin.isDestroyed()) return;
+  petExpanded = { width: Math.round(width), height: Math.round(height) };
+  applyPetBounds();
+});
+ipcMain.handle('pet:move', (_e, dx, dy) => {
+  if (!petWin || petWin.isDestroyed()) return;
+  petOrigin = { x: petOrigin.x + Math.round(dx), y: petOrigin.y + Math.round(dy) };
+  applyPetBounds();
+});
+// 点开了等待中的会话 = 已处理：托盘里不再显示它（它状态一变就自动回来）
+ipcMain.handle('pet:dismiss', (_e, key) => {
+  if (typeof key === 'string') petDismissed.add(key);
+  return true;
+});
+ipcMain.handle('pet:hide', () => setPetEnabled(false));
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -323,6 +512,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     if (prefs().autostart) applyAutostart(true); // 刷新一下启动路径，项目挪过位置也不怕
     createWindow();
+    createPetWindow();
     createTray();
   });
   app.on('window-all-closed', () => app.quit());

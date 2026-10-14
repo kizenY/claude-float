@@ -1,0 +1,180 @@
+:root {
+  --bg: #faf9f5;
+  --fg: #1f1e1d;
+  --muted: #7b776f;
+  --line: #e6e2d8;
+  --hover: #f0ede4;
+  --accent: #c96442;
+  --accent-soft: #f6e3da;
+  --wait: #4a7bd4;
+  --wait-soft: #e3ebfa;
+  --ok: #2e8b57;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #262624;
+    --fg: #ecebe6;
+    --muted: #9a978f;
+    --line: #3a3936;
+    --hover: #30302d;
+    --accent: #d97757;
+    --accent-soft: #43302a;
+    --wait: #7ba7ff;
+    --wait-soft: #26324a;
+    --ok: #4cd47c;
+  }
+}
+
+* { box-sizing: border-box; user-select: none; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+body { cursor: grab; font: 13px/1.4 "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif; color: var(--fg); }
+body:active { cursor: grabbing; }
+
+/* 一帧原始 192x208，zoom 统一缩放（背景偏移也跟着缩，坐标按原始尺寸写就行） */
+#pet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 192px;
+  height: 208px;
+  zoom: 0.78;
+  background-repeat: no-repeat;
+}
+#fallback {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+/* 等待回复数徽章：宠物头上一颗小气泡 */
+#badge {
+  position: absolute;
+  right: 96px;
+  bottom: 128px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--wait);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 30%);
+  animation: bounce 1.2s ease-in-out infinite;
+}
+@keyframes bounce { 50% { transform: translateY(-3px); } }
+@keyframes pulse { 50% { opacity: .35; } }
+[hidden] { display: none !important; }
+
+/* ---- 会话托盘：常驻显示在宠物上方（有 进行中/等你 的会话时） ---- */
+#tray {
+  position: absolute;
+  inset: 2px 2px auto 2px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 22%);
+  overflow: hidden;
+}
+#tray-empty {
+  position: absolute;
+  inset: 2px 2px auto 2px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 22%);
+}
+
+.trow {
+  padding: 5px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.trow:hover { background: var(--hover); }
+.trow .t1 { display: flex; align-items: center; gap: 6px; }
+/* 状态点：橙=在跑 蓝=等你 绿=空闲（对齐 AgentPet 的彩色状态点） */
+.trow .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.trow .dot.working { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.trow .dot.waiting { background: var(--wait); animation: pulse 1s ease-in-out infinite; }
+.trow .dot.idle { background: var(--ok); }
+.trow .t1 b {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trow .t2 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.trow .t2 .pv {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trow.waiting { box-shadow: inset 2px 0 0 var(--wait); }
+.src { padding: 0 4px; border-radius: 4px; background: var(--hover); font-size: 10px; }
+.chip { flex: none; font-size: 11px; padding: 0 6px; border-radius: 9px; }
+.chip.working { color: var(--accent); background: var(--accent-soft); }
+.chip.waiting { color: var(--wait); background: var(--wait-soft); font-weight: 600; }
+.chip.idle { color: var(--muted); }
+
+/* ---- 快捷目录卡片：贴在宠物本体上方、会话列表下面；点宠物本体切换显隐 ---- */
+#quick {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 168px; /* 宠物本体 162 + 6px 间距 */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 22%);
+}
+.qbtn {
+  flex: 1 1 calc(50% - 2px); /* 一行两个，目录多时自动换行 */
+  min-width: 0;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 7px;
+  background: var(--hover);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qbtn:hover { background: var(--accent-soft); }
+.qbtn:active { transform: translateY(1px); }
