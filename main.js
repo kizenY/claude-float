@@ -64,7 +64,7 @@ function createWindow() {
   const s = loadState();
   const { workArea } = screen.getPrimaryDisplay();
   const width = s.width || 320;
-  const height = s.height || 440;
+  const height = s.height || 500; // Tab 条 + 代办收起行比旧版多占 ~60px；存过高度的不动
   const pos = onSomeDisplay(s)
     ? { x: s.x, y: s.y }
     : { x: workArea.x + workArea.width - width - 24, y: workArea.y + 80 };
@@ -200,10 +200,20 @@ function createTray() {
 function snapshot(target, out) {
   target.webContents.on('console-message', (e) => console.log('RENDERER', e.message));
   target.webContents.once('did-finish-load', () => setTimeout(async () => {
-    if (process.env.CLAUDE_FLOAT_SNAPSHOT_JS && target === win) {
-      console.log('JS', JSON.stringify(await win.webContents.executeJavaScript(process.env.CLAUDE_FLOAT_SNAPSHOT_JS)));
+    if (process.env.CLAUDE_FLOAT_SNAPSHOT_JS) {
+      console.log('JS', JSON.stringify(await target.webContents.executeJavaScript(process.env.CLAUDE_FLOAT_SNAPSHOT_JS)));
     }
-    fs.writeFileSync(out, (await target.webContents.capturePage()).toPNG());
+    // 透明窗口的 capturePage 在 Windows 上一直返回旧合成帧（等重绘/setBounds 都没用），
+    // 走 CDP 的 Page.captureScreenshot 才能拿到 JS 改完 DOM 后的真实画面
+    const wc = target.webContents;
+    const { debugger: dbg } = wc;
+    try {
+      dbg.attach('1.3');
+      const shot = await dbg.sendCommand('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(out, Buffer.from(shot.data, 'base64'));
+    } finally {
+      if (dbg.isAttached()) dbg.detach();
+    }
     console.log('SNAPSHOT', out);
     if (process.env.CLAUDE_FLOAT_QUIT_AFTER_SNAPSHOT) app.quit(); // 调试：截图完自动退出，脚本化 smoke 用
   }, 2500));
@@ -382,32 +392,6 @@ function armPending(todoId, ws) {
   pendingBind = { todoId, ws, knownIds, at: Date.now() };
 }
 
-// 启动条左键弹菜单：新会话 / 新建代办 / 这个工作区的未完成单（点单 = 起会话并挂单）。
-// 挂单只对 Claude 会话有效（Codex 会话 id 是另一套，v1 不挂）
-ipcMain.handle('launch:menu', (_e, dir, mode) => {
-  const target = QUICK_DIRS.find((d) => d.path === dir);
-  if (!target) throw new Error('bad dir');
-  const spawnFn = mode === 'codex' ? spawnCodexTerminal : spawnCfTerminal;
-  const items = [
-    { label: `新会话（${target.name}）`, click: () => spawnFn(target.path) },
-    { label: '新建代办…', click: () => win.webContents.send('todos:new', { ws: target.path }) },
-  ];
-  if (mode !== 'codex') {
-    const open = todos.list().filter((t) => t.status === 'open' && todos.sameDir(t.ws, target.path));
-    if (open.length) {
-      items.push(
-        { type: 'separator' },
-        { label: '起会话并挂单：', enabled: false },
-        ...open.slice(0, 10).map((t) => ({
-          label: t.title,
-          click: () => { armPending(t.id, t.ws); spawnCfTerminal(t.ws); },
-        })),
-      );
-    }
-  }
-  Menu.buildFromTemplate(items).popup({ window: win });
-});
-
 ipcMain.handle('todos:list', () => todos.list());
 ipcMain.handle('todos:create', (_e, { title, desc, ws }) => {
   const t = { title: String(title || ''), desc: String(desc || ''), ws: String(ws || '') };
@@ -478,7 +462,10 @@ function petListItems() {
       const key = `${s.mode}:${s.id}`;
       seen.add(key);
       const prev = petPrevStatus.get(key);
-      if (prev === 'working' && s.status === 'idle') petDone.add(key);
+      if (prev === 'working' && s.status === 'idle') {
+        petDone.add(key);
+        s.justIdle = true; // 这轮刚干完的：宠物用它区分「庆祝跳」和「报错趴下」
+      }
       else if (s.status !== 'idle') petDone.delete(key); // 又开跑了，从「等候」回到「进行中」
       if (s.status === 'working') petDismissed.delete(key); // 开跑的会话永远显示，dismiss 压不住它
       petPrevStatus.set(key, s.status);
@@ -537,13 +524,14 @@ function createPetWindow() {
   petWin.once('ready-to-show', () => { if (petPrefs().enabled) petWin.showInactive(); });
 }
 
-// 拖拽/展开都从 petOrigin（宠物本体左上角）推窗口位置，位置状态也只存它
+// 拖拽/展开都从 petOrigin（宠物本体左上角）推窗口位置，位置状态也只存它。
+// 托盘水平居中于宠物：窗口以宠物为中心左右对称扩，展开/收起切换时宠物屏幕位置不动
 function petWindowPos() {
   const { workArea } = screen.getPrimaryDisplay();
-  const offX = petExpanded ? petExpanded.width - PET_WIDTH : 0;
+  const w = petExpanded ? petExpanded.width : PET_WIDTH;
   const offY = petExpanded ? petExpanded.height - PET_HEIGHT : 0;
   return {
-    x: Math.min(Math.max(workArea.x, petOrigin.x - offX), workArea.x + workArea.width - (PET_WIDTH + offX)),
+    x: Math.min(Math.max(workArea.x, petOrigin.x - (w - PET_WIDTH) / 2), workArea.x + workArea.width - w),
     y: Math.min(Math.max(workArea.y, petOrigin.y - offY), workArea.y + workArea.height - (PET_HEIGHT + offY)),
   };
 }
@@ -560,7 +548,7 @@ function applyPetBounds() {
 function savePetBounds() {
   if (!petWin || petWin.isDestroyed()) return;
   const b = petWin.getBounds();
-  petOrigin = { x: b.x + (petExpanded ? petExpanded.width - PET_WIDTH : 0), y: b.y + (petExpanded ? petExpanded.height - PET_HEIGHT : 0) };
+  petOrigin = { x: b.x + (b.width - PET_WIDTH) / 2, y: b.y + (petExpanded ? petExpanded.height - PET_HEIGHT : 0) };
   patchState({ petX: petOrigin.x, petY: petOrigin.y });
 }
 
@@ -589,6 +577,12 @@ ipcMain.handle('pet:load', () => {
 // 状态只在宠物窗口可见时刷新（省得白读一遍会话记录），隐藏时返回缓存
 // 宠物窗的轮询入口：每次都现算（和浮窗 3s 一轮同量级），renderer 收起时自己用缓存
 ipcMain.handle('pet:sessions', () => {
+  // 调试 smoke：CLAUDE_FLOAT_PET_FAKE 传会话 JSON 数组，不读真实列表（只在未打包时生效）
+  if (!app.isPackaged && process.env.CLAUDE_FLOAT_PET_FAKE) {
+    const items = JSON.parse(process.env.CLAUDE_FLOAT_PET_FAKE);
+    petStatusCache = petMod.aggregateStatus(petStatusCache, items, Date.now());
+    return { ...petStatusCache, items };
+  }
   const items = petListItems();
   petStatusCache = petMod.aggregateStatus(petStatusCache, items, Date.now());
   return { ...petStatusCache, items };
@@ -613,9 +607,9 @@ ipcMain.handle('pet:hide', () => setPetEnabled(false));
 // 点宠物本体 = 切换浮窗显隐（和托盘图标单击同款）
 ipcMain.handle('pet:toggle-main', () => toggleWindow());
 
-// 调试截图（CLAUDE_FLOAT_SNAPSHOT）时豁免单实例锁：正主浮窗在跑也能起第二个实例出图，
+// 调试截图（CLAUDE_FLOAT_SNAPSHOT / CLAUDE_FLOAT_PET_SNAPSHOT）时豁免单实例锁：正主浮窗在跑也能起第二个实例出图，
 // 截完自动退出；channel server 是随机端口，不会撞
-if (!app.requestSingleInstanceLock() && !process.env.CLAUDE_FLOAT_SNAPSHOT) {
+if (!app.requestSingleInstanceLock() && !process.env.CLAUDE_FLOAT_SNAPSHOT && !process.env.CLAUDE_FLOAT_PET_SNAPSHOT) {
   app.quit();
 } else {
   app.on('second-instance', () => { if (win) { win.show(); win.focus(); } });

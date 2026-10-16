@@ -142,12 +142,12 @@ assert.throws(() => imageDims(Buffer.from('not an image at all')));
   assert.deepStrictEqual(scanPets({ userDir: path.join(userDir, '无'), codexDir: path.join(codexDir, '无') }), []);
 }
 
-// ---- 状态聚合：跑→闲 给出 finishedAt，继续跑则清零 ----
+// ---- 状态聚合：跑→闲 给出 finishedAt，继续跑则清零；报错收尾给 failedAt（与庆祝互斥） ----
 {
   const items = (statuses) => statuses.map((status, i) => ({ id: String(i), status }));
   const t0 = 1000;
   let st = aggregateStatus(null, items(['working', 'idle']), t0);
-  assert.deepStrictEqual(st, { working: true, waiting: false, finishedAt: 0 });
+  assert.deepStrictEqual(st, { working: true, waiting: false, finishedAt: 0, failedAt: 0 });
   // 还在跑 → 没有 finished
   st = aggregateStatus(st, items(['working']), t0 + 3000);
   assert.strictEqual(st.finishedAt, 0);
@@ -160,6 +160,25 @@ assert.throws(() => imageDims(Buffer.from('not an image at all')));
   assert.strictEqual(st.finishedAt, t0 + 6000);
   // 空列表也安全
   assert.strictEqual(aggregateStatus(null, null, t0).working, false);
+  // 报错收尾（justIdle + lastError）：打 failedAt，不庆祝
+  let st2 = aggregateStatus(null, [{ id: 'a', status: 'working' }], t0);
+  st2 = aggregateStatus(st2, [{ id: 'a', status: 'idle', justIdle: true, lastError: true }], t0 + 2000);
+  assert.strictEqual(st2.failedAt, t0 + 2000);
+  assert.strictEqual(st2.finishedAt, 0);
+  // 正常收尾：finishedAt 有、failedAt 保持 0
+  let st3 = aggregateStatus(null, items(['working']), t0);
+  st3 = aggregateStatus(st3, [{ id: '0', status: 'idle', justIdle: true }], t0 + 1000);
+  assert.strictEqual(st3.finishedAt, t0 + 1000);
+  assert.strictEqual(st3.failedAt, 0);
+  // 列表里躺着的旧报错会话（非 justIdle）不会把正常完成误判成失败
+  let st4 = aggregateStatus(null, items(['working']), t0);
+  st4 = aggregateStatus(st4, [{ id: '0', status: 'idle', justIdle: true }, { id: '1', status: 'idle', lastError: true }], t0 + 4000);
+  assert.strictEqual(st4.finishedAt, t0 + 4000);
+  assert.strictEqual(st4.failedAt, 0);
+  // 多会话：一个刚正常收工、另一个还在跑 → 也不用等全部收工，照样庆祝
+  const st5 = aggregateStatus(null, [{ id: 'a', status: 'idle', justIdle: true }, { id: 'b', status: 'working' }], t0 + 5000);
+  assert.strictEqual(st5.working, true);
+  assert.strictEqual(st5.finishedAt, t0 + 5000);
 }
 
 console.log('pet.test.js 通过');

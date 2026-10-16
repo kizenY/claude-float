@@ -119,7 +119,7 @@ function parse(entries) {
 
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
-    if (e.cwd) cwd = e.cwd;
+    if (e.cwd) cwd = e.cwd; // tail 窗口里最后一条 cwd，会被会话内 cd 带漂；inspect 里用 headCwd（启动目录）覆盖
     if (e.type === 'custom-title' && e.customTitle) title = e.customTitle;
     else if (e.type === 'ai-title' && e.aiTitle) title = title || e.aiTitle;
     else if (e.type === 'summary' && e.summary) title = title || e.summary;
@@ -136,6 +136,9 @@ function parse(entries) {
       break;
     }
   }
+
+  // 以 API 报错收尾（连不上/超额之类）：宠物用它区分「庆祝跳」和「失落趴」
+  const lastError = replyIdx >= 0 && entries[replyIdx].message.isApiErrorMessage === true;
 
   let reply = '';
   if (replyIdx >= 0) {
@@ -154,8 +157,24 @@ function parse(entries) {
     title: (title || fallback.split('\n')[0] || '未命名会话').slice(0, 80),
     cwd,
     reply,
+    lastError,
     tail: tailOf(entries),
   };
+}
+
+// 启动目录：读文件头第一条 cwd。会话里 cd 会把后续条目的 cwd 带漂（agent 中途去改别的项目就漂了），
+// 归目录、挂单匹配、resume 回目录都要「会话从哪起的」，不能拿尾部那条；tail 读不到头部，单独读一小段
+function headCwd(file) {
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buf = Buffer.alloc(65536);
+      const n = fs.readSync(fd, buf, 0, buf.length, 0);
+      const m = buf.toString('utf8', 0, n).match(/"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if (!m) return null;
+      try { return JSON.parse(`"${m[1]}"`); } catch { return null; }
+    } finally { fs.closeSync(fd); }
+  } catch { return null; }
 }
 
 function inspect(file, stat) {
@@ -167,6 +186,7 @@ function inspect(file, stat) {
     info = parse(entries);
     if (info.reply || complete) break;
   }
+  if (info) info.cwd = headCwd(file) || info.cwd;
   cache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, info });
   return info;
 }
@@ -276,6 +296,7 @@ function list(limit = 20) {
       pid: l ? l.pid : null,
       waitingFor: l && l.status === 'waiting' ? l.waitingFor || '' : '',
       preview: info.reply.replace(/\s+/g, ' ').slice(0, 120),
+      lastError: info.lastError === true, // 以 API 报错收尾（宠物趴下不庆祝；Codex 会话没有这个标记）
     };
     // 同一个会话已经占过位（文件比频道登记晚落盘）——换成有内容的完整行
     const at = out.findIndex((o) => o.id === f.id);
@@ -299,4 +320,4 @@ function pidFor(id) {
   return l ? l.pid : null;
 }
 
-module.exports = { list, reply, parse, statusOf, channelFor, pidFor, ROOT };
+module.exports = { list, reply, parse, statusOf, channelFor, pidFor, headCwd, ROOT };

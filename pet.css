@@ -30,10 +30,12 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 body { cursor: grab; font: 13px/1.4 "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif; color: var(--fg); }
 body:active { cursor: grabbing; }
 
-/* 一帧原始 192x208，zoom 统一缩放（背景偏移也跟着缩，坐标按原始尺寸写就行） */
+/* 一帧原始 192x208，zoom 统一缩放（背景偏移也跟着缩，坐标按原始尺寸写就行）。
+   宠物水平居中在窗口里（75 = 宠物实际宽 150 的一半），托盘占满窗口宽，两者中心天然对齐。
+   注意 zoom 会把 right 偏移一起缩放，所以乘回 0.78；zoom 值改动时这里要同步 */
 #pet {
   position: absolute;
-  right: 0;
+  right: calc((50% - 75px) * 0.78);
   bottom: 0;
   width: 192px;
   height: 208px;
@@ -42,7 +44,7 @@ body:active { cursor: grabbing; }
 }
 #fallback {
   position: absolute;
-  right: 0;
+  right: calc(50% - 75px); /* 无 zoom，直接用原偏移 */
   bottom: 0;
   padding: 8px;
   font-size: 12px;
@@ -52,10 +54,10 @@ body:active { cursor: grabbing; }
   border-radius: 8px;
 }
 
-/* 等待回复数徽章：宠物头上一颗小气泡 */
+/* 等待回复数徽章：宠物头上一颗小气泡（跟着宠物走：50% - 75 是宠物居中基准，96 是相对宠物右缘的原偏移） */
 #badge {
   position: absolute;
-  right: 96px;
+  right: calc(50% + 21px);
   bottom: 128px;
   min-width: 18px;
   height: 18px;
@@ -140,6 +142,31 @@ body:active { cursor: grabbing; }
   text-overflow: ellipsis;
 }
 .trow.waiting { box-shadow: inset 2px 0 0 var(--wait); }
+
+/* ---- 叠起态：去掉外层面板框，几张真卡片直接浮在宠物上方，上下错开叠成一摞（通知堆）----
+   底卡逐层左右内缩 + 露出自己的标题行，纵深感和信息都有 */
+#tray.stacked {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 4px 6px 0;
+}
+#tray.stacked .stack { position: relative; cursor: pointer; }
+#tray.stacked .stack .trow.layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%), 0 6px 14px rgb(0 0 0 / 12%);
+  pointer-events: none; /* 点击统一按顶层卡的语义处理 */
+}
+#tray.stacked .stack .trow.layer.waiting { box-shadow: inset 2px 0 0 var(--wait), 0 1px 2px rgb(0 0 0 / 8%), 0 6px 14px rgb(0 0 0 / 12%); }
+#tray.stacked .stack .trow.layer.l0 { bottom: 0; z-index: 2; }
+#tray.stacked .stack .trow.layer.l1 { bottom: 26px; z-index: 1; left: 3px; right: 3px; } /* 错位量和 pet-renderer 的 STACK_PEEK 对齐 */
+#tray.stacked .stack .trow.layer.l2 { bottom: 52px; z-index: 0; left: 6px; right: 6px; }
+#tray.stacked .stack:hover .trow.layer.l0 { background: var(--hover); }
 .src { padding: 0 4px; border-radius: 4px; background: var(--hover); font-size: 10px; }
 .chip { flex: none; font-size: 11px; padding: 0 6px; border-radius: 9px; }
 .chip.working { color: var(--accent); background: var(--accent-soft); }

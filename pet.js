@@ -185,9 +185,20 @@ function aggregateStatus(prev, items, now) {
     if (s.status === 'working') working = true;
     else if (s.status === 'waiting') waiting = true;
   }
+  // 这轮刚收工的会话（justIdle 由调用方按「上一轮还在跑」标记，fake 冒烟可以直接手标）：
+  // 正常收工庆祝、报错收尾趴下；多会话里任何一个先干完也庆祝，不用等全部收工
+  const failed = (items || []).some((s) => s.justIdle && s.lastError && s.status === 'idle');
+  const justDone = (items || []).some((s) => s.justIdle && !s.lastError && s.status === 'idle');
+  const justFinished = !working && prev && prev.working; // 兜底：全部收工（含会话掉出最近列表的情况）
   const prevFinishedAt = (prev && prev.finishedAt) || 0;
-  const finishedAt = working ? 0 : (prev && prev.working ? now : prevFinishedAt);
-  return { working, waiting, finishedAt };
+  const prevFailedAt = (prev && prev.failedAt) || 0;
+  return {
+    working,
+    waiting,
+    // 报错收尾不庆祝：failed 和 finishedAt 互斥
+    finishedAt: (justDone || (justFinished && !failed)) ? now : (working ? 0 : prevFinishedAt),
+    failedAt: failed ? now : (working ? 0 : prevFailedAt),
+  };
 }
 
 module.exports = {

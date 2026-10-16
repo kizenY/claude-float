@@ -28,4 +28,22 @@ assert.strictEqual(st([a('m1', 'tool_use', [{ type: 'tool_use', name: 'Bash' }])
 assert.strictEqual(st([a('m1', 'end_turn', [{ type: 'text', text: 'x' }]), { type: 'queue-operation', operation: 'enqueue' }], 5e3), 'working');
 // 子 Agent 的记录不影响主线
 assert.strictEqual(st([a('m1', 'end_turn', [{ type: 'text', text: 'x' }]), { ...u('sub'), isSidechain: true }], 5e3), 'idle');
+
+// headCwd：取文件头第一条 cwd（启动目录）。会话里 cd 会把后续条目的 cwd 带漂，
+// 归目录/resume 都要「从哪起的」，不能拿尾部那条
+{
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { headCwd } = require('../sessions');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cwd-float-'));
+  const file = path.join(dir, 's.jsonl');
+  const line = (cwd) => JSON.stringify({ type: 'user', cwd, message: { content: 'hi' } });
+  fs.writeFileSync(file, [line('E:\\agent-cluster\\carl'), line('E:\\develop\\code\\claude-float')].join('\n'));
+  assert.strictEqual(headCwd(file), 'E:\\agent-cluster\\carl');
+  // 头部没有 cwd（空文件/坏文件）→ null，不抛
+  fs.writeFileSync(path.join(dir, 'empty.jsonl'), '');
+  assert.strictEqual(headCwd(path.join(dir, 'empty.jsonl')), null);
+  assert.strictEqual(headCwd(path.join(dir, '无.jsonl')), null);
+}
 console.log('status ok');
