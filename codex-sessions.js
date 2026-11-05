@@ -10,6 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const hiddenSessions = require('./hidden-sessions');
 
 const ROOT = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions');
 // 桌面端维护的线程名索引：~/.codex/session_index.jsonl，每行 { id, thread_name, updated_at }
@@ -257,6 +258,7 @@ function list(limit = 20) {
   files.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
 
   const now = Date.now();
+  const hidden = new Set(hiddenSessions.load().map((h) => h.id)); // 右键「移出列表」的
   const out = [];
   for (const f of files) {
     if (out.length >= limit) break;
@@ -271,6 +273,7 @@ function list(limit = 20) {
     if (excluded(cwd)) continue;
     if (ONLY.length && !ONLY.some((k) => path.basename(cwd).toLowerCase().includes(k))) continue;
     const id = (meta && (meta.session_id || meta.id)) ? String(meta.session_id || meta.id) : idFromFile(f.file);
+    if (hidden.has(id)) continue;
     out.push({
       id,
       file: f.file,

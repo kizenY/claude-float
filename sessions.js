@@ -2,6 +2,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const hiddenSessions = require('./hidden-sessions');
 
 const ROOT = path.join(os.homedir(), '.claude', 'projects');
 const LIVE_ROOT = path.join(os.homedir(), '.claude', 'sessions');
@@ -61,6 +62,11 @@ function tailOf(entries) {
     if (isMain(entries[i])) { lastIdx = i; break; }
   }
   if (lastIdx < 0) return { kind: 'end' };
+  // 会话被 continue 到新文件（上下文满自动转 / 手动继续）：旧文件不会再有回复，
+  // 不然最后一条主线停在 user 消息上，每次 mtime 被回写刷新都会白显 10 分钟「进行中」
+  if (entries.slice(lastIdx + 1).some((e) => e.type === 'continued-in')) {
+    return { kind: 'end' };
+  }
   // Claude 回完之后你又排队发了消息
   if (entries.slice(lastIdx + 1).some((e) => e.type === 'queue-operation' && e.operation === 'enqueue')) {
     return { kind: 'user' };
@@ -256,11 +262,13 @@ function list(limit = 20) {
 
   const live = liveIndex();
   const channels = channelIndex();
+  const hidden = new Set(hiddenSessions.load().map((h) => h.id)); // 右键「移出列表」的
   const now = Date.now();
   const out = [];
   // 先占位：活着的频道会话排最前。刚用 cf 起的新会话第一条消息前没有 jsonl 文件，
   // 不占位的话点了启动按钮列表里什么都看不到
   for (const [sid, ch] of channels) {
+    if (hidden.has(sid)) continue;
     const l = live.get(sid);
     out.push({
       id: sid,
@@ -279,6 +287,7 @@ function list(limit = 20) {
   }
   for (const f of files) {
     if (out.length >= limit) break;
+    if (hidden.has(f.id)) continue;
     let info;
     try { info = inspect(f.file, f.stat); } catch { continue; }
     if (!info.reply && !channels.has(f.id)) continue; // 没有任何回复的会话不展示，除非能从浮窗直接发消息

@@ -133,7 +133,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   animation: pulse 1.2s ease-in-out infinite;
 }
 
-/* ---- 视图主体：左目录栏（竖排常驻）+ 右侧上代办区（可收起）下会话区 ---- */
+/* ---- 视图主体：左目录栏（竖排常驻）+ 右侧上任务区（可收起）下会话区 ---- */
 .shell { flex: 1; min-height: 0; display: flex; }
 
 /* 左侧目录栏：quick-dirs 生成 + 末尾「其他」兜底；默认收起成窄条（目录首字方块），点块展开+切目录 */
@@ -200,14 +200,16 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 }
 
 .view { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.dir-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.list-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 目录主体是唯一的滚动容器：任务区展开后不限高，任务和会话一起往下滚；
+   任务少时 list-wrap 靠 grow:1 占满剩余空间（空态居中不塌） */
+.dir-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
+.dir-body::-webkit-scrollbar { width: 5px; }
+.dir-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+.dir-body::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+.list-wrap { flex: 1 0 auto; display: flex; flex-direction: column; }
 
-/* ---- 会话列表 ---- */
-.list { flex: 1; margin: 0; padding: 7px; list-style: none; overflow-y: auto; overscroll-behavior: contain; }
-.list::-webkit-scrollbar, .todo-list::-webkit-scrollbar { width: 5px; }
-.list::-webkit-scrollbar-thumb, .todo-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
-.list::-webkit-scrollbar-thumb:hover, .todo-list::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+/* ---- 会话列表（跟任务区共用 dir-body 的滚动） ---- */
+.list { flex: none; margin: 0; padding: 7px; list-style: none; }
 
 .item {
   position: relative;
@@ -399,26 +401,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 }
 .empty-logo { width: 30px; height: 30px; fill: var(--accent); opacity: .28; }
 
-/* ---- 会话区的「＋ 起新会话」：钉在列表底部，「其他」Tab 不显示 ---- */
-.session-new {
-  flex: none; margin: 0 12px 10px;
-  font: inherit; font-size: 12px; font-weight: 500;
-  padding: 5px 0;
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  white-space: nowrap; overflow: hidden;
-  transition: border-color var(--t-fast), border-style var(--t-fast), color var(--t-fast), background-color var(--t-fast);
-}
-.session-new:hover {
-  border-color: var(--accent);
-  border-style: solid;
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
 /* 声音下拉（设置弹层内） */
 .select-wrap { position: relative; flex: 1; min-width: 0; display: inline-flex; }
 .select-wrap::after {
@@ -452,17 +434,17 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 @keyframes eq { 0%, 100% { height: 3px; } 50% { height: 11px; } }
 @keyframes flash-row { 0%, 65% { background: var(--accent-soft); } 100% { background: transparent; } }
 
-/* ---- 代办区：每个 Tab 头部，默认收起一行，展开只看当前目录的单 ---- */
-.todo-strip {
-  flex: 0 1 auto;
-  max-height: 45%; /* 展开时最多占一半，别把会话区挤没，列表自己滚 */
-  display: flex; flex-direction: column;
-  border-bottom: 1px solid var(--line);
-}
+/* ---- 任务区：每个 Tab 头部，默认收起一行，展开只看当前目录的任务 ----
+   展开后不限高（不设 max-height）：任务多长都自然撑开，跟会话列表共用 dir-body 的滚动；
+   往下滚时收放行 sticky 冻结置顶，随时能点回收起 */
 .strip-head {
+  position: sticky; top: 0; z-index: 5; /* 滚动时冻结在 dir-body 顶 */
   flex: none;
+  height: 31px; /* 定高：下面的会话收放行按这个数贴着它冻结 */
   display: flex; align-items: center;
   padding: 3px 6px 3px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg); /* 要实色垫底，不然任务行从底下透出来 */
 }
 .strip-toggle {
   flex: 1; min-width: 0;
@@ -485,25 +467,23 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   font-size: 9.5px; font-weight: 600; line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.strip-add { flex: none; width: 22px; height: 22px; }
-.strip-add svg { width: 13px; height: 13px; }
-/* 展开体也要撑满并约束高度，.todo-list 的 flex:1 才能生效、才会滚动 */
-.strip-body {
-  flex: 1; min-height: 0;
-  display: flex; flex-direction: column;
-}
-.strip-seg-row { flex: none; display: flex; padding: 2px 10px 5px; }
+.strip-body { flex: none; }
 
-/* 新建代办表单头（表单本体盖在 dir-body 上） */
-.todos-head {
+/* 会话区的收放行：同款样式，冻结时贴在任务收放行正下方 */
+.strip-head.sess-head { top: 31px; }
+.strip-plus {
   flex: none;
-  display: flex; align-items: center; gap: 7px;
-  padding: 8px 6px 8px 14px;
-  border-bottom: 1px solid var(--line);
+  width: 24px; height: 24px; padding: 0; margin-right: 4px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 7px;
+  background: transparent; color: var(--muted);
+  cursor: pointer;
+  transition: background-color var(--t-fast), color var(--t-fast), transform var(--t-fast);
 }
-.todos-title { font-weight: 600; font-size: 12.5px; }
-.todo-close { width: 22px; height: 22px; }
-.todo-close svg { width: 13px; height: 13px; }
+.strip-plus svg { width: 14px; height: 14px; }
+.strip-plus:hover { background: var(--accent-soft); color: var(--accent); }
+.strip-plus:active { transform: scale(.9); }
+.strip-seg-row { flex: none; display: flex; padding: 6px 10px 2px; }
 
 .todo-seg {
   flex: none;
@@ -519,7 +499,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .todo-seg button:hover { color: var(--fg); background: var(--hover); }
 .todo-seg button.on { background: var(--accent-soft); color: var(--accent); }
 
-.todo-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 8px; overscroll-behavior: contain; }
+.todo-list { flex: none; margin: 0; padding: 6px 8px 10px; list-style: none; }
 .todo-empty {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   padding: 28px 12px; text-align: center;
@@ -528,30 +508,34 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 .todo-empty svg { width: 18px; height: 18px; opacity: .5; }
 
 .todo-item {
-  display: flex; gap: 9px; padding: 9px 11px; border-radius: 9px; cursor: pointer;
+  display: flex; gap: 9px; padding: 8px 11px; border-radius: 9px; cursor: pointer;
   transition: background-color var(--t-fast);
 }
 .todo-item:hover { background: var(--hover); }
 .todo-item.flash { animation: flash-row 2.4s ease; }
-.todo-check {
-  flex: none; width: 16px; height: 16px; margin-top: 2px; padding: 0;
+/* 已完成任务打勾的圆点：完成/打开只由会话经 MCP 工具操作，这里只展示 */
+.todo-dot {
+  flex: none; width: 16px; height: 16px; margin-top: 1px; padding: 0;
   display: grid; place-items: center;
   border: 1.5px solid var(--muted); border-radius: 50%;
-  background: transparent; color: transparent; cursor: pointer;
-  transition: border-color var(--t-fast), background-color var(--t-fast);
+  background: transparent; color: transparent;
 }
-.todo-check:hover { border-color: var(--accent); }
-.todo-check svg {
+.todo-item.done .todo-dot { border-color: var(--accent); background: var(--accent); color: #fff; }
+.todo-dot svg {
   width: 10px; height: 10px;
   stroke: currentColor; stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round;
-  transform: scale(0); transition: transform .16s ease;
+  transform: scale(0);
 }
-.todo-item.done .todo-check { border-color: var(--accent); background: var(--accent); color: #fff; }
-.todo-item.done .todo-check svg { transform: scale(1); }
+.todo-item.done .todo-dot svg { transform: scale(1); }
 .todo-main { flex: 1; min-width: 0; }
 .todo-top { display: flex; align-items: baseline; gap: 8px; }
 .todo-title { flex: 1; min-width: 0; font-weight: 500; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .todo-time { flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+/* 任务行收起态的最新进度预览：单行截断，展开看时间线 */
+.todo-desc.todo-last {
+  margin-top: 3px; font-size: 11.5px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .todo-item.done .todo-title { text-decoration: line-through; color: var(--muted); }
 .todo-item.done { opacity: .7; }
 .todo-meta {
@@ -571,6 +555,28 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   white-space: pre-wrap; word-break: break-word;
   user-select: text;
 }
+/* 详情里的字段标签（内容/目标）+ 目标文字 */
+.todo-field { margin-bottom: 7px; }
+.todo-field .lbl { display: block; margin-bottom: 2px; color: var(--muted); font-size: 10.5px; }
+.todo-field .val {
+  color: var(--fg); font-size: 12px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word; user-select: text;
+}
+/* 进度条：百分比 + 细条，有 pct 才显示 */
+.todo-bar-row { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.todo-bar { flex: 1; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.todo-bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); transition: width .4s ease; }
+.todo-pct { flex: none; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* 进度时间线：最新在上，一条一行（时间 + 文字），只读 */
+.todo-prog { margin-top: 7px; }
+.todo-prog .lbl { color: var(--muted); font-size: 10.5px; margin-bottom: 3px; }
+.todo-prog-item {
+  display: flex; gap: 7px; padding: 3px 0;
+  font-size: 11.5px; line-height: 1.45;
+}
+.todo-prog-item .at { flex: none; color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; padding-top: 1px; }
+.todo-prog-item .tx { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; user-select: text; }
+.todo-prog-more { padding: 2px 0; color: var(--muted); font-size: 10.5px; }
 .todo-sess-row {
   display: flex; align-items: center; gap: 5px; margin-top: 5px;
   color: var(--muted); font-size: 11.5px;
@@ -602,8 +608,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   transition: color var(--t-fast), border-color var(--t-fast), background-color var(--t-fast);
 }
 .todo-act:hover { color: var(--fg); background: var(--bg); border-color: var(--muted); }
-.todo-act.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
-.todo-act.danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
 .todo-pick { margin-top: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 4px; background: var(--bg); }
 .todo-pick .hint { padding: 2px 5px 4px; color: var(--muted); font-size: 11px; }
 .todo-pick .cand {
@@ -614,22 +618,35 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 }
 .todo-pick .cand:hover { background: var(--hover); }
 
-.todo-form { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 0 12px 10px; }
-.todo-label { margin: 10px 0 4px; color: var(--muted); font-size: 11px; }
-.todo-input {
-  width: 100%; font: inherit; font-size: 12.5px; color: var(--fg);
-  background: var(--hover);
-  border: 1px solid var(--line); border-radius: 8px;
-  padding: 7px 9px; outline: none;
-  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+/* 任务行右键菜单：自绘小菜单，跟随浮窗主题（亮暗、Codex 形态都靠变量自动切） */
+.ctx-menu {
+  position: fixed; z-index: 60;
+  min-width: 150px; max-width: 230px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: var(--shadow-card);
+  display: flex; flex-direction: column; gap: 1px;
 }
-.todo-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
-textarea.todo-input { resize: none; }
-select.todo-input { background: var(--bg); }
-.todo-form-row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
-.todo-form .send-btn:disabled { opacity: .5; cursor: default; }
+.ctx-item {
+  display: block; width: 100%; padding: 6px 10px;
+  border: 0; border-radius: 6px;
+  background: transparent; color: var(--fg);
+  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background-color var(--t-fast);
+}
+.ctx-item:hover { background: var(--hover); }
+.ctx-item:active { transform: scale(.98); }
+.ctx-item.danger { color: var(--danger); }
+.ctx-item.danger:hover { background: var(--danger-soft); }
+.ctx-item.armed { background: var(--danger); color: #fff; font-weight: 600; }
+.ctx-item:disabled { color: var(--muted); cursor: default; }
+.ctx-item:disabled:hover { background: none; }
+.ctx-item:disabled:active { transform: none; }
+.ctx-sep { height: 1px; margin: 4px 6px; background: var(--line); }
 
-/* 会话行上的代办回显标签 */
+/* 会话行上的任务回显标签 */
 .todo-tag {
   display: inline-block; padding: 0 5px; margin-right: 5px;
   border-radius: 5px;
@@ -637,3 +654,6 @@ select.todo-input { background: var(--bg); }
   font-size: 11px; cursor: pointer;
 }
 .todo-tag:hover { text-decoration: underline; }
+
+/* 徽章第三色：受阻/红灯语义（会话/任务只有 working/waiting 两色） */
+.chip.danger { color: var(--danger); background: var(--danger-soft); }

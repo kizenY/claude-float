@@ -1,5 +1,5 @@
 // 宠物窗口：精灵图动画 + 常驻会话托盘（有 进行中/等你 的会话时显示在宠物上方；多条默认叠成一摞，
-// 顶层是进行中点卡展开、是等你/刚完成点卡即点会话，展开后鼠标离开热区 15 秒自动折叠）+ 手动拖拽
+// 露头的卡片各自可点即点会话，最前面那张是进行中则点卡展开，展开后鼠标离开热区 15 秒自动折叠）+ 手动拖拽
 // 窗口 focusable=false 不抢焦点；窗口高度随会话数自适应，锚点始终是宠物本体（右下角），
 // 位置推算和状态保存都由主进程按 petOrigin 处理
 const petEl = document.getElementById('pet');
@@ -199,7 +199,8 @@ function renderTray() {
   const items = lastData.items.slice().sort(trayOrder).slice(0, MAX_ROWS);
   if (items.length > 1 && !expanded) {
     // 叠起（默认）：多张真卡片上下错开叠成一摞，底下各露一条自己的标题头（状态点+标题+chip），
-    // 像通知堆一样一眼看出叠了几张。顶层是进行中 → 点摞展开列表；是等你/刚完成 → 等同点这条会话
+    // 像通知堆一样一眼看出叠了几张。露头那张点到就是切到它的会话；最前面那张是进行中 → 点卡展开列表，
+    // 是等你/刚完成 → 等同点这条会话
     const top = items[0];
     const layers = Math.min(items.length, STACK_LAYERS);
     listEl.classList.add('stacked');
@@ -207,15 +208,22 @@ function renderTray() {
     wrap.className = 'stack';
     wrap.style.height = `${(layers - 1) * STACK_PEEK + ROW_HEIGHT}px`;
     wrap.title = top.status === 'working'
-      ? `${items.length} 个会话：点一下展开，离开 15 秒自动收起`
+      ? `${items.length} 个会话：点这张展开，或直接点上面露头的卡片；离开 15 秒自动收起`
       : rowTooltip(top);
-    wrap.addEventListener('click', () => {
+    const topClick = () => {
       if (top.status === 'working') { expanded = true; renderTray(); applySize(); }
       else activateSession(top);
-    });
+    };
+    wrap.addEventListener('click', topClick); // 点到卡片错位缝时的兜底，仍按顶层卡处理
     for (let i = layers - 1; i >= 0; i--) { // 从最底那张往上画，顶层最后画、压在所有卡上面
-      const row = buildRow(items[i], () => {});
+      const s = items[i];
+      const row = buildRow(s, (e) => {
+        e.stopPropagation(); // 别冒泡到 wrap，否则会再按顶层卡触发一次
+        if (i === 0) topClick(); // 最前面这张还管展开/即点会话；后面露头的卡片各点各的
+        else activateSession(s);
+      });
       row.classList.add('layer', `l${i}`);
+      if (i === 0 && top.status === 'working') row.title = wrap.title;
       if (i === layers - 1 && items.length > layers) {
         // 会话比能画的层数多：最底下那张的 chip 换成总数，示意底下还压着更多
         const chip = row.querySelector('.chip');

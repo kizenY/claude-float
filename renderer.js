@@ -4,7 +4,7 @@ const synth = window.speechSynthesis;
 const { sameWs, matchDir } = window.Tabs;
 
 const settings = (() => {
-  const defaults = { rate: 1.1, voice: 'edge:zh-CN-XiaoxiaoNeural', mode: 'claude', activeTab: '', todoStripOpen: false, railOpen: false, speakBtn: false, replyBtn: false };
+  const defaults = { rate: 1.1, voice: 'edge:zh-CN-XiaoxiaoNeural', mode: 'claude', activeTab: '', todoStripOpen: false, sessStripOpen: true, railOpen: false, speakBtn: false, replyBtn: false };
   try {
     const saved = JSON.parse(localStorage.getItem('settings') || '{}');
     return {
@@ -14,6 +14,7 @@ const settings = (() => {
       mode: saved.mode === 'codex' ? 'codex' : 'claude',
       activeTab: typeof saved.activeTab === 'string' ? saved.activeTab : '',
       todoStripOpen: saved.todoStripOpen === true,
+      sessStripOpen: saved.sessStripOpen !== false, // 会话列表默认展开
       railOpen: saved.railOpen === true,
       speakBtn: saved.speakBtn === true,
       replyBtn: saved.replyBtn === true,
@@ -82,13 +83,14 @@ function rowButton(icon, title, onClick) {
 
 function render() {
   const shown = visibleSessions();
+  updateSessCount();
   $('empty').hidden = shown.length > 0;
   $('empty-text').textContent = activeTab === OTHER_TAB
     ? (mode === 'codex' ? '没有归类到启动目录的 Codex 会话' : '没有归类到启动目录的会话')
     : (mode === 'codex'
       ? '这个目录还没有 Codex 会话记录（在终端跑一次 codex 就有了）'
       : '这个目录还没有会话记录');
-  // 会话 ↔ 未完成代办的回显：绑了单的会话行加个「单·」标签
+  // 会话 ↔ 未完成任务的回显：绑了单的会话行加个「任·」标签
   const todoBySession = new Map();
   for (const t of todoData) {
     if (t.status !== 'open') continue;
@@ -145,8 +147,8 @@ function render() {
     if (bound) {
       const tt = document.createElement('span');
       tt.className = 'todo-tag';
-      tt.textContent = '单·' + bound.title.slice(0, 10) + (bound.title.length > 10 ? '…' : '');
-      tt.title = `代办：${bound.title}（点击查看）`;
+      tt.textContent = '任·' + bound.title.slice(0, 10) + (bound.title.length > 10 ? '…' : '');
+      tt.title = `任务：${bound.title}（点击查看）`;
       tt.addEventListener('click', (e) => { e.stopPropagation(); gotoTodo(bound.id); });
       preview.append(tt);
     }
@@ -154,6 +156,10 @@ function render() {
 
     li.append(title, meta, preview);
     li.addEventListener('click', () => focusSession(s));
+    li.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openSessionMenu(s, e.clientX, e.clientY);
+    });
     return li;
   }));
 }
@@ -518,11 +524,12 @@ $('btn-settings').addEventListener('click', async (e) => {
 $('settings-pop').addEventListener('click', (e) => e.stopPropagation());
 document.addEventListener('click', () => { if (settingsOpen()) closeSettings(); });
 
-// ---- 目录侧栏：quick-dirs 生成 + 末尾「其他」兜底，会话和代办跟着目录过滤 ----
+// ---- 目录侧栏：quick-dirs 生成 + 末尾「其他」兜底，会话和任务跟着目录过滤 ----
 const OTHER_TAB = 'other';
 let quickDirList = [];
 let activeTab = settings.activeTab;     // 目录 path（quick-dirs 原样字符串）或 'other'
-let stripOpen = settings.todoStripOpen; // 代办区展开态
+let stripOpen = settings.todoStripOpen; // 任务区展开态
+let sessOpen = settings.sessStripOpen; // 会话区展开态（默认展开）
 
 const tabOf = (dir) => matchDir(dir, quickDirList) || OTHER_TAB;
 const activeDir = () => quickDirList.find((d) => d.path === activeTab) || null;
@@ -583,7 +590,7 @@ function renderDirRail() {
     const btn = el('button', 'dir-item' + (t.key === activeTab ? ' on' : ''));
     btn.type = 'button';
     btn.dataset.key = t.key;
-    btn.title = t.key === OTHER_TAB ? '没归到启动目录里的会话和代办' : t.key;
+    btn.title = t.key === OTHER_TAB ? '没归到启动目录里的会话和任务' : t.key;
     btn.append(el('span', 'dir-item-glyph', (t.name || '?')[0]));
     btn.append(el('span', 'dir-item-name', t.name));
     const n = counts.get(t.key) || 0;
@@ -624,7 +631,6 @@ function setActiveTab(tab) {
   activeTab = tab;
   settings.activeTab = tab;
   saveSettings();
-  if (!$('todo-form').hidden) closeTodoForm(); // 表单开着换 Tab，先收掉别错位
   todoExpanded = null;
   todoPicking = null;
   markActiveDirRail();
@@ -634,12 +640,11 @@ function setActiveTab(tab) {
   if (stripOpen) renderTodos();
 }
 
-// 会话区的「＋ 在这个目录起新会话」；「其他」Tab 没有可启动的目录，不显示
+// 会话收放行右侧的 ＋：在当前目录起新会话；「其他」Tab 没有可启动的目录，不显示
 function updateSessionNew() {
   const dir = activeDir();
-  const btn = $('session-new');
-  btn.hidden = !dir;
-  if (dir) btn.textContent = `＋ 在 ${dir.name} 起新会话`;
+  $('session-new').hidden = !dir;
+  if (dir) $('session-new').title = `在 ${dir.name} 起新会话`;
 }
 
 window.api.quickDirs().then((dirs) => {
@@ -647,6 +652,7 @@ window.api.quickDirs().then((dirs) => {
   restoreActiveTab();
   renderDirRail();
   renderStrip();
+  renderSessStrip();
   updateSessionNew();
   render();
   if (stripOpen) renderTodos();
@@ -654,16 +660,18 @@ window.api.quickDirs().then((dirs) => {
   restoreActiveTab();
   renderDirRail();
   renderStrip();
+  renderSessStrip();
   updateSessionNew();
 });
 
-// ---- 代办单：按工作区管事，起会话自动挂单（数据在 ~/.claude-float/todos.json） ----
-// 代办区在每个 Tab 头部（默认收起），只显示当前目录的单
+// ---- 任务单：按工作区管事，起会话自动挂单（数据在 ~/.claude-float/todos.json） ----
+// 任务区在每个 Tab 头部（默认收起），只显示当前目录的任务。
+// 浮窗对任务是只读的：创建/更新内容/记进度/完成/删除都由会话经 MCP 工具（todos_*）操作，
+// 这样长任务分多个会话推进也不丢进度；浮窗上能动的只有「绑哪个会话」这一层。
 let todoData = [];
 let todoStatus = 'open'; // 'open' | 'done'
-let todoExpanded = null; // 展开详情的单 id
-let todoPicking = null;  // 正在挑会话绑定的单 id
-let deleteArm = null;    // { id, until } 删除按钮的两步确认状态
+let todoExpanded = null; // 展开详情的任务 id
+let todoPicking = null;  // 正在挑会话绑定的任务 id
 let todoFlash = null;    // { id, until } 从会话行标签跳过来时高亮一下
 
 function wsName(ws) {
@@ -681,6 +689,136 @@ function el(tag, cls, text) {
 
 const UNBIND_ICON = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const TODO_EMPTY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 4h6V2H9v2zM7 4H5.5A1.5 1.5 0 0 0 4 5.5v15A1.5 1.5 0 0 0 5.5 22h13a1.5 1.5 0 0 0 1.5-1.5v-15A1.5 1.5 0 0 0 18.5 4H17"/><path d="M8.5 13l2.5 2.5L16 10.5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// ---- 通用右键菜单（自绘，跟浮窗同一套主题变量；先用在任务行上） ----
+// items: { label, danger, onClick(btn) } | 'sep'。onClick 里自己决定要不要 closeCtxMenu
+// （两段确认的项第一击不关，改按钮文案等第二击）
+let ctxMenuEl = null;
+function onCtxDismiss(e) {
+  // 点/右键在菜单外一律关；在菜单上再右键也当「关掉重选」
+  if (e.type === 'contextmenu' || !ctxMenuEl.contains(e.target)) closeCtxMenu();
+}
+function closeCtxMenu() {
+  if (!ctxMenuEl) return;
+  ctxMenuEl.remove();
+  ctxMenuEl = null;
+  document.removeEventListener('pointerdown', onCtxDismiss, true);
+  document.removeEventListener('contextmenu', onCtxDismiss, true);
+}
+function showCtxMenu(x, y, items) {
+  closeCtxMenu();
+  const m = el('div', 'ctx-menu');
+  for (const it of items) {
+    if (it === 'sep') { m.append(el('div', 'ctx-sep')); continue; }
+    const b = el('button', 'ctx-item' + (it.danger ? ' danger' : '') + (it.disabled ? ' disabled' : ''), it.label);
+    b.type = 'button';
+    if (it.disabled) b.disabled = true;
+    b.addEventListener('click', (e) => { e.stopPropagation(); it.onClick(b); });
+    m.append(b);
+  }
+  document.body.append(m);
+  // 先量尺寸再贴边收拢，浮窗小，菜单不能被窗口边缘裁掉
+  const r = m.getBoundingClientRect();
+  m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
+  m.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + 'px';
+  ctxMenuEl = m;
+  document.addEventListener('pointerdown', onCtxDismiss, true);
+  document.addEventListener('contextmenu', onCtxDismiss, true);
+}
+
+async function copyText(text, okMsg) {
+  try {
+    await window.api.clipboardWrite(text);
+    flash(okMsg || '已复制');
+  } catch { flash('复制失败'); }
+}
+
+// 任务行的右键菜单：内容层面的增删改都在会话里做（MCP 工具），这里只留浮窗能动的
+function openTodoMenu(t, x, y) {
+  const items = [];
+  if (t.status === 'open') {
+    items.push({ label: '▶ 起会话并接手', onClick: async () => {
+      closeCtxMenu();
+      try {
+        const res = await window.api.todosSpawn(t.id);
+        flash(res.ok ? '已起会话，会话上线后自动挂单' : (res.message || '启动失败'));
+      } catch (err) { flash(`启动失败：${String(err.message || err)}`); }
+    } });
+  }
+  items.push({ label: '⧉ 复制标题', onClick: () => { closeCtxMenu(); copyText(t.title, '标题已复制'); } });
+  if (t.desc) items.push({ label: '⧉ 复制内容', onClick: () => { closeCtxMenu(); copyText(t.desc, '内容已复制'); } });
+  if (t.goal) items.push({ label: '⧉ 复制目标', onClick: () => { closeCtxMenu(); copyText(t.goal, '目标已复制'); } });
+  if (t.ws && quickDirList.some((d) => d.path === t.ws)) {
+    items.push({ label: '📂 打开工作区目录', onClick: () => { closeCtxMenu(); window.api.openPath(t.ws).catch(() => flash('打开失败')); } });
+  }
+  showCtxMenu(x, y, items);
+}
+
+// 会话行的右键菜单：朗读/快速回复不再依赖行上按钮开关（默认藏着，这里常驻），另挂复制/开目录/起新会话/挂任务
+function openSessionMenu(s, x, y) {
+  const speaking = s.id === speakingId;
+  const items = [
+    { label: speaking ? '⏹ 停止朗读' : '🔊 朗读最新回复', onClick: () => { closeCtxMenu(); toggleSpeak(s); } },
+  ];
+  // 已结束的会话没法回复，不给这一项（点行本身就会 --resume 恢复）
+  if (s.channel || s.pid) {
+    items.push({ label: '↩ 快速回复', onClick: () => { closeCtxMenu(); openComposer(s); } });
+  }
+  items.push('sep', { label: '⧉ 复制标题', onClick: () => { closeCtxMenu(); copyText(s.title, '标题已复制'); } });
+  if (s.preview) {
+    items.push({ label: '⧉ 复制最新输出', onClick: () => { closeCtxMenu(); copyText(s.preview, '最新输出已复制'); } });
+  }
+  if (s.cwd) {
+    items.push({ label: '📂 打开会话目录', onClick: () => { closeCtxMenu(); window.api.openPath(s.cwd).catch(() => flash('打开失败')); } });
+  }
+  // 起新会话在主进程只认 quick-dirs 白名单（防注入）；matchDir 命中才有这一项，拿白名单原样 path 去比对
+  const spawnDir = matchDir(s.cwd, quickDirList);
+  if (spawnDir) {
+    items.push({ label: '＋ 在此目录起新会话', onClick: () => {
+      closeCtxMenu();
+      window.api.spawn(spawnDir, mode)
+        .then(() => flash(`已在 ${s.project || '该目录'} 起新会话`))
+        .catch((e) => flash(`启动失败：${String(e.message || e)}`));
+    } });
+  }
+  // 挂到同目录未完成的任务：补上「会话→任务」方向（之前只能从任务那边挑会话绑）
+  const cands = todoData.filter((t) => t.status === 'open' && sameWs(t.ws, s.cwd) && !(t.sessions || []).includes(s.id));
+  if (cands.length) {
+    items.push('sep');
+    for (const t of cands.slice(0, 4)) {
+      const short = t.title.length > 10 ? t.title.slice(0, 10) + '…' : t.title;
+      items.push({ label: '📌 挂任务：' + short, onClick: async () => {
+        closeCtxMenu();
+        try {
+          await window.api.todosBind(t.id, s.id);
+          flash('会话已挂到任务');
+          refreshTodos();
+        } catch (err) { flash(`挂任务失败：${String(err.message || err)}`); }
+      } });
+    }
+    if (cands.length > 4) items.push({ label: `…还有 ${cands.length - 4} 张，去任务区挂`, disabled: true, onClick: () => {} });
+  }
+  // 移出列表（两段确认）：只藏不删，记录文件不动；移出后不再出现在浮窗（设置里也没有恢复入口）
+  items.push('sep');
+  items.push({ label: '移出列表', danger: true, onClick: (btn) => {
+    if (!btn.classList.contains('armed')) {
+      btn.classList.add('armed');
+      btn.textContent = '再点一次移出';
+      setTimeout(() => {
+        if (!ctxMenuEl || !ctxMenuEl.contains(btn)) return;
+        btn.classList.remove('armed');
+        btn.textContent = '移出列表';
+      }, 3000);
+      return;
+    }
+    closeCtxMenu();
+    window.api.sessionHide(s.id, s.title).then(() => {
+      flash('已移出列表');
+      refresh();
+    }).catch((err) => flash(`移出失败：${String(err.message || err)}`));
+  } });
+  showCtxMenu(x, y, items);
+}
 
 function todoEmptyBox(text) {
   const d = el('div', 'todo-empty');
@@ -711,6 +849,19 @@ function renderStrip() {
   $('strip-count').textContent = String(n);
 }
 
+// 会话区收放行：跟任务区同款（caret + 标题 + 计数），列表整体显隐
+function renderSessStrip() {
+  $('sess-caret').classList.toggle('open', sessOpen);
+  $('list-wrap').hidden = !sessOpen;
+  updateSessCount();
+}
+
+function updateSessCount() {
+  const n = sessions.filter((s) => tabOf(s.cwd) === activeTab).length;
+  $('sess-count').hidden = n === 0;
+  $('sess-count').textContent = String(n);
+}
+
 // 绑定的会话挑个活状态透传：进行中 > 等待回复
 function todoLive(t) {
   const bound = (t.sessions || []).map((id) => sessions.find((s) => s.id === id)).filter(Boolean);
@@ -732,24 +883,28 @@ function visibleTodos() {
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
+// 任务行的进度条 + 百分比（pct 没设过就不显示）
+function todoBarRow(t) {
+  if (t.pct === undefined || t.pct === null) return null;
+  const row = el('div', 'todo-bar-row');
+  const bar = el('span', 'todo-bar');
+  const fill = el('i');
+  fill.style.width = `${Math.min(100, Math.max(0, t.pct))}%`;
+  bar.append(fill);
+  row.append(bar, el('span', 'todo-pct', `${t.pct}%`));
+  return row;
+}
+
 function todoRow(t) {
   const li = el('li', 'todo-item'
     + (t.status === 'done' ? ' done' : '')
     + (todoFlash && todoFlash.id === t.id && Date.now() < todoFlash.until ? ' flash' : ''));
 
-  const check = el('button', 'todo-check');
-  check.type = 'button';
-  check.title = t.status === 'open' ? '标记完成' : '重新打开';
-  check.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>';
-  check.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    try {
-      await window.api.todosToggle(t.id);
-      flash(t.status === 'open' ? '已完成 ✔' : '已重新打开');
-      refreshTodos();
-    } catch (err) { flash(`操作失败：${String(err.message || err)}`); }
-  });
-  li.append(check);
+  // 完成/重开只由会话经 MCP 工具操作，这里只是状态圆点
+  const dot = el('span', 'todo-dot');
+  dot.title = t.status === 'done' ? '已完成（会话里 todos_toggle 可重开）' : '未完成';
+  dot.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>';
+  li.append(dot);
 
   const main = el('div', 'todo-main');
   const top = el('div', 'todo-top');
@@ -764,6 +919,16 @@ function todoRow(t) {
   if (chip) meta.append(el('span', 'chip ' + chip[1], chip[0]));
   main.append(meta);
 
+  const bar = todoBarRow(t);
+  if (bar) main.append(bar);
+  const last = (t.progressLog || [])[((t.progressLog || []).length - 1)];
+  if (last) {
+    const pv = el('div', 'todo-desc todo-last');
+    pv.textContent = last.text;
+    pv.title = `最新进度（${ago(last.at)}）：${last.text}`;
+    main.append(pv);
+  }
+
   if (todoExpanded === t.id) main.append(todoDetail(t, bound));
   li.append(main);
 
@@ -772,12 +937,40 @@ function todoRow(t) {
     todoPicking = null;
     renderTodos();
   });
+  li.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    openTodoMenu(t, e.clientX, e.clientY);
+  });
   return li;
 }
 
+// 详情展开区：内容/目标/进度时间线 + 绑定会话 + 起会话接手。
+// 标题内容目标进度都在会话里改（todos_update），浮窗上没有任何编辑控件
 function todoDetail(t, bound) {
   const box = el('div', 'todo-detail');
-  if (t.desc) box.append(el('div', 'todo-desc', t.desc));
+  if (t.desc) {
+    const f = el('div', 'todo-field');
+    f.append(el('span', 'lbl', '内容'), el('span', 'val', t.desc));
+    box.append(f);
+  }
+  if (t.goal) {
+    const f = el('div', 'todo-field');
+    f.append(el('span', 'lbl', '目标'), el('span', 'val', t.goal));
+    box.append(f);
+  }
+
+  const log = t.progressLog || [];
+  if (log.length) {
+    const prog = el('div', 'todo-prog');
+    prog.append(el('span', 'lbl', '进度'));
+    for (const p of log.slice(-5).reverse()) {
+      const item = el('div', 'todo-prog-item');
+      item.append(el('span', 'at', ago(p.at)), el('span', 'tx', p.text));
+      prog.append(item);
+    }
+    if (log.length > 5) prog.append(el('div', 'todo-prog-more', `…更早还有 ${log.length - 5} 条`));
+    box.append(prog);
+  }
 
   for (const s of bound) {
     const row = el('div', 'todo-sess-row');
@@ -819,7 +1012,7 @@ function todoDetail(t, bound) {
 
   const actions = el('div', 'todo-actions');
   if (t.status === 'open') {
-    const go = el('button', 'todo-launch', '▶ 起会话并挂单');
+    const go = el('button', 'todo-launch', '▶ 起会话并接手');
     go.type = 'button';
     go.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -838,33 +1031,6 @@ function todoDetail(t, bound) {
     renderTodos();
   });
   actions.append(bindBtn);
-
-  // 两步删除：点一下变红「确认删除」，3 秒内再点才真删
-  const armed = deleteArm && deleteArm.id === t.id && Date.now() < deleteArm.until;
-  const del = el('button', 'todo-act' + (armed ? ' danger' : ''), armed ? '确认删除' : '删除');
-  del.type = 'button';
-  del.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (!armed) {
-      deleteArm = { id: t.id, until: Date.now() + 3000 };
-      renderTodos();
-      setTimeout(() => {
-        if (deleteArm && Date.now() >= deleteArm.until) {
-          deleteArm = null;
-          if (stripOpen) renderTodos();
-        }
-      }, 3100);
-      return;
-    }
-    deleteArm = null;
-    try {
-      await window.api.todosDelete(t.id);
-      if (todoExpanded === t.id) todoExpanded = null;
-      flash('已删除');
-      refreshTodos();
-    } catch (err) { flash(`删除失败：${String(err.message || err)}`); }
-  });
-  actions.append(del);
   box.append(actions);
   return box;
 }
@@ -876,14 +1042,14 @@ function renderTodos() {
   const list = $('todo-list');
   if (!items.length) {
     list.replaceChildren(todoEmptyBox(todoStatus === 'done'
-      ? '没有已完成的代办'
-      : `「${activeTabName()}」还没有未完成的代办`));
+      ? '没有已完成的任务'
+      : `「${activeTabName()}」还没有未完成的任务（让会话里的 ${modeInfo().agent} 调 todos_add 建一个）`));
     return;
   }
   list.replaceChildren(...items.map(todoRow));
 }
 
-// 会话行上的「单·」标签点进来：跳到那张单的 Tab，展开代办区并高亮
+// 会话行上的「任·」标签点进来：跳到那个任务的 Tab，展开任务区并高亮
 function gotoTodo(id) {
   const t = todoData.find((x) => x.id === id);
   if (!t) return;
@@ -900,70 +1066,7 @@ function gotoTodo(id) {
   setTimeout(() => { todoFlash = null; if (stripOpen) renderTodos(); }, 2600);
 }
 
-// ---- 新建代办表单（可聚焦套路和快速回复一致：打开时临时 setFocusable(true)） ----
-function fillTodoWs(preselect) {
-  const sel = $('todo-ws');
-  sel.replaceChildren(...quickDirList.map((d) => {
-    const o = document.createElement('option');
-    o.value = d.path;
-    o.textContent = d.name;
-    return o;
-  }));
-  if (preselect && quickDirList.some((d) => d.path === preselect)) sel.value = preselect;
-  else if (quickDirList.length) sel.selectedIndex = 0;
-}
-
-async function openTodoForm(preselectWs) {
-  closeSettings();
-  fillTodoWs(preselectWs);
-  $('dir-body').hidden = true;
-  $('todo-form').hidden = false;
-  $('todo-title').value = '';
-  $('todo-desc').value = '';
-  updateTodoSubmit();
-  await window.api.setFocusable(true);
-  $('todo-title').focus();
-}
-
-function closeTodoForm() {
-  if ($('todo-form').hidden) return;
-  $('todo-form').hidden = true;
-  $('dir-body').hidden = false;
-  window.api.setFocusable(false);
-  renderTodos();
-}
-
-function updateTodoSubmit() {
-  $('todo-submit').disabled = !$('todo-title').value.trim();
-}
-
-$('todo-title').addEventListener('input', updateTodoSubmit);
-$('todo-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const title = $('todo-title').value.trim();
-  const ws = $('todo-ws').value;
-  if (!title || !ws || !quickDirList.some((d) => d.path === ws)) return;
-  try {
-    await window.api.todosCreate({ title, desc: $('todo-desc').value.trim(), ws });
-    todoStatus = 'open';
-    closeTodoForm();
-    flash('代办已创建');
-    // 跳到这张单的工作区 Tab 并展开代办区，能看到刚建的单
-    setActiveTab(tabOf(ws));
-    stripOpen = true;
-    settings.todoStripOpen = true;
-    saveSettings();
-    renderStrip();
-    renderTodos();
-    refreshTodos();
-  } catch (err) {
-    flash(`创建失败：${String(err.message || err)}`);
-  }
-});
-$('todo-form-close').addEventListener('click', closeTodoForm);
-$('todo-cancel').addEventListener('click', closeTodoForm);
-
-// 代办区收起/展开（状态记住，重启还原）
+// 任务区收起/展开（状态记住，重启还原）
 $('strip-toggle').addEventListener('click', () => {
   stripOpen = !stripOpen;
   settings.todoStripOpen = stripOpen;
@@ -971,11 +1074,16 @@ $('strip-toggle').addEventListener('click', () => {
   renderStrip();
   if (stripOpen) renderTodos();
 });
-// 代办区的 ＋：工作区预填当前 Tab（「其他」没有对应目录，交给表单默认第一项）
-$('todo-new').addEventListener('click', () => openTodoForm(activeTab === OTHER_TAB ? undefined : activeTab));
+// 会话区收起/展开（同款收放行，状态记住；默认展开）
+$('sess-toggle').addEventListener('click', () => {
+  sessOpen = !sessOpen;
+  settings.sessStripOpen = sessOpen;
+  saveSettings();
+  renderSessStrip();
+});
 $('todo-tab-open').addEventListener('click', () => { todoStatus = 'open'; renderTodos(); });
 $('todo-tab-done').addEventListener('click', () => { todoStatus = 'done'; renderTodos(); });
-// 会话区的 ＋：在当前目录起一个新会话（Claude 形态走 cf，Codex 形态走 codex）
+// 会话收放行的 ＋：在当前目录起一个新会话（Claude 形态走 cf，Codex 形态走 codex）
 $('session-new').addEventListener('click', async () => {
   const dir = activeDir();
   if (!dir) return;
@@ -1013,17 +1121,23 @@ $('btn-pin').addEventListener('click', async () => {
 window.api.isPinned().then((on) => $('btn-pin').classList.toggle('on', on));
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if (ctxMenuEl) { closeCtxMenu(); return; }                // 先关右键菜单
   if (settingsOpen()) { closeSettings(); return; }          // 先关设置弹层
-  if (!$('todo-form').hidden) { closeTodoForm(); return; }  // 再关表单
   if (!$('composer').hidden) { closeComposer(); return; }   // 再关回复框（textarea 里自处理，这里是兜底）
-  if (deleteArm) { deleteArm = null; renderTodos(); return; } // 解除删除布防
   if (todoPicking) { todoPicking = null; renderTodos(); return; } // 取消挑会话
-  if (todoExpanded) { todoExpanded = null; renderTodos(); return; } // 收起代办详情
-  if (stripOpen) {                                          // 收起代办区（也算一次显式收起，记住状态）
+  if (todoExpanded) { todoExpanded = null; renderTodos(); return; } // 收起任务详情
+  if (stripOpen) {                                          // 收起任务区（也算一次显式收起，记住状态）
     stripOpen = false;
     settings.todoStripOpen = false;
     saveSettings();
     renderStrip();
+    return;
+  }
+  if (sessOpen) {                                           // 再收起会话列表
+    sessOpen = false;
+    settings.sessStripOpen = false;
+    saveSettings();
+    renderSessStrip();
     return;
   }
   stop();                                                   // 最后才是停止朗读
@@ -1035,6 +1149,7 @@ fillVoices();
 applyMode();
 applyRowSwitches();
 renderStrip();
+renderSessStrip();
 updateSessionNew();
 refresh();
 setInterval(refresh, 3000);

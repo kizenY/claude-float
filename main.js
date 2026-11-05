@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, clipboard, Tray, Menu, nativeImage } = require('electron');
 const { spawn, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -6,6 +6,7 @@ const path = require('path');
 const sessions = require('./sessions');
 const codex = require('./codex-sessions');
 const todos = require('./todos');
+const hiddenSessions = require('./hidden-sessions');
 const edgeTts = require('./edge-tts');
 const reply = require('./reply');
 const focus = require('./focus');
@@ -64,7 +65,7 @@ function createWindow() {
   const s = loadState();
   const { workArea } = screen.getPrimaryDisplay();
   const width = s.width || 320;
-  const height = s.height || 500; // Tab 条 + 代办收起行比旧版多占 ~60px；存过高度的不动
+  const height = s.height || 500; // Tab 条 + 任务收起行比旧版多占 ~60px；存过高度的不动
   const pos = onSomeDisplay(s)
     ? { x: s.x, y: s.y }
     : { x: workArea.x + workArea.width - width - 24, y: workArea.y + 80 };
@@ -221,7 +222,7 @@ function snapshot(target, out) {
 
 ipcMain.handle('sessions:list', async (_e, limit, mode) => {
   const res = mode === 'codex' ? codex.attachPids(codex.list(limit)) : sessions.list(limit);
-  // 起会话挂单：等新会话在列表里冒头了就把 id 写进代办（只匹配 claude 会话）
+  // 起会话挂单：等新会话在列表里冒头了就把 id 写进任务（只匹配 claude 会话）
   if (pendingBind && mode !== 'codex') {
     const hitId = todos.matchPending(res, pendingBind);
     if (hitId) {
@@ -375,6 +376,8 @@ function spawnCodexTerminal(dir, extraArgs = '') {
   spawn('C:\\Windows\\System32\\wscript.exe', args, { env: cleanSpawnEnv(), stdio: 'ignore' }).unref();
 }
 
+// 右键「移出列表」：只藏不删（记录文件是 Claude Code / Codex 的数据），移出即不再显示
+ipcMain.handle('session:hide', (_e, { id, title }) => hiddenSessions.hide(String(id), String(title || '')));
 ipcMain.handle('session:spawn', (_e, dir, mode) => {
   // 只白名单里的目录可以起，防止 renderer 被注入任意路径
   const target = QUICK_DIRS.find((d) => d.path === dir);
@@ -384,7 +387,9 @@ ipcMain.handle('session:spawn', (_e, dir, mode) => {
   return { ok: true, name: target.name };
 });
 
-// ---- 代办单：~/.claude-float/todos.json，工作区 = quick-dirs 白名单里的目录 ----
+// ---- 任务单：~/.claude-float/todos.json，工作区 = quick-dirs 白名单里的目录 ----
+// 任务的创建/更新/完成/删除都由会话经 MCP 工具操作（channel/server.js）；
+// 浮窗这边只剩只读的 list 和「绑哪个会话/起会话接手」这层 UI 动作。
 // 起会话前先记下「这个目录当前已知的会话 id」，之后冒出来的新会话就是要挂的那条
 let pendingBind = null; // { todoId, ws, knownIds, at }，内存态：浮窗重启丢了就手动补挂
 function armPending(todoId, ws) {
@@ -393,25 +398,27 @@ function armPending(todoId, ws) {
 }
 
 ipcMain.handle('todos:list', () => todos.list());
-ipcMain.handle('todos:create', (_e, { title, desc, ws }) => {
-  const t = { title: String(title || ''), desc: String(desc || ''), ws: String(ws || '') };
-  if (!t.title.trim()) throw new Error('title required');
-  // 工作区必须是 quick-dirs 白名单里的目录，和 session:spawn 同一套防注入
-  if (!QUICK_DIRS.some((d) => d.path === t.ws)) throw new Error('bad ws');
-  return todos.create(t);
-});
-ipcMain.handle('todos:toggle', (_e, id) => todos.toggle(String(id)));
-ipcMain.handle('todos:delete', (_e, id) => ({ ok: todos.remove(String(id)) }));
 ipcMain.handle('todos:bind', (_e, { id, sessionId }) => todos.bind(String(id), String(sessionId)));
 ipcMain.handle('todos:unbind', (_e, { id, sessionId }) => todos.unbind(String(id), String(sessionId)));
 ipcMain.handle('todos:spawn', (_e, id) => {
   const t = todos.list().find((x) => x.id === String(id));
   if (!t || t.status !== 'open' || !QUICK_DIRS.some((d) => d.path === t.ws)) {
-    return { ok: false, message: '这张代办不在了，或工作区不在启动目录列表里' };
+    return { ok: false, message: '这个任务不在了，或工作区不在启动目录列表里' };
   }
   armPending(t.id, t.ws);
   spawnCfTerminal(t.ws);
   return { ok: true };
+});
+
+// 右键菜单用的两个小动作：复制走主进程剪贴板（浮窗平时不可聚焦，navigator.clipboard 不稳），
+// 开目录限「绝对路径且真实存在且是目录」——会话的 cwd 常不在 quick-dirs 白名单里（「其他」区），也要能开
+ipcMain.handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text || '')); });
+ipcMain.handle('shell:openPath', (_e, p) => {
+  const dir = String(p || '');
+  if (!path.isAbsolute(dir)) throw new Error('bad path');
+  const st = fs.statSync(dir); // 不存在会 throw，同样拒绝
+  if (!st.isDirectory()) throw new Error('not a directory');
+  shell.openPath(dir);
 });
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);
 ipcMain.handle('tts:synthesize', (_e, text, opts) => edgeTts.synthesize(String(text), opts));

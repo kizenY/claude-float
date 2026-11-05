@@ -83,25 +83,44 @@ async function post(reg, token, text) {
     send({ jsonrpc: '2.0', id: ++id, method: 'tools/list' });
     const tl = await wait((m) => m.id === id && m.result && m.result.tools);
     assert.deepStrictEqual(tl.result.tools.map((t) => t.name).sort(),
-      ['todos_add', 'todos_bind', 'todos_list', 'todos_remove', 'todos_toggle']);
+      ['todos_add', 'todos_bind', 'todos_list', 'todos_remove', 'todos_toggle', 'todos_update']);
 
     const empty = await waitCall('todos_list');
     assert.ok(empty.result.content[0].text.includes('没有'), 'empty list message');
 
-    const added = await waitCall('todos_add', { title: '在会话里记一张', desc: 'MCP 加的' });
+    const added = await waitCall('todos_add', { title: '在会话里记一个', desc: 'MCP 加的内容', goal: '测试全绿' });
     const addedText = added.result.content[0].text;
     assert.ok(!added.result.isError, addedText);
-    assert.ok(addedText.includes('在会话里记一张'), addedText);
+    assert.ok(addedText.includes('在会话里记一个'), addedText);
     const todoId = (addedText.match(/\[(t-[^\]]+)\]/) || [])[1];
     assert.ok(todoId, 'todo id returned');
 
-    // 落盘核对：工作区=子进程 cwd，且自动挂了本会话
+    // 落盘核对：工作区=子进程 cwd，且自动挂了本会话；内容/目标都落了
     const onDisk = JSON.parse(fs.readFileSync(todosFile, 'utf8')).find((t) => t.id === todoId);
     assert.strictEqual(onDisk.ws, process.cwd());
     assert.deepStrictEqual(onDisk.sessions, [SESSION]);
+    assert.strictEqual(onDisk.desc, 'MCP 加的内容');
+    assert.strictEqual(onDisk.goal, '测试全绿');
+    assert.deepStrictEqual(onDisk.progressLog, []);
+
+    // 推进任务：改字段 + 记一条进度（带百分比），进度记录要落盘且百分比更新
+    const upd = await waitCall('todos_update', { id: todoId, goal: '测试全绿（改）', progress_note: '第一轮干完了', pct: 30 });
+    const updText = upd.result.content[0].text;
+    assert.ok(!upd.result.isError, updText);
+    assert.ok(updText.includes('第一轮干完了'), updText);
+    const afterUpd = JSON.parse(fs.readFileSync(todosFile, 'utf8')).find((t) => t.id === todoId);
+    assert.strictEqual(afterUpd.goal, '测试全绿（改）');
+    assert.strictEqual(afterUpd.pct, 30);
+    assert.strictEqual(afterUpd.progressLog.length, 1);
+    assert.strictEqual(afterUpd.progressLog[0].text, '第一轮干完了');
+    assert.strictEqual(afterUpd.progressLog[0].by, SESSION);
 
     const listed = await waitCall('todos_list', { status: 'all' });
-    assert.ok(listed.result.content[0].text.includes('在会话里记一张'), listed.result.content[0].text);
+    assert.ok(listed.result.content[0].text.includes('在会话里记一个'), listed.result.content[0].text);
+    assert.ok(listed.result.content[0].text.includes('最新进度：第一轮干完了'), listed.result.content[0].text);
+
+    const badUpd = await waitCall('todos_update', { id: 't-nope', title: 'x' });
+    assert.ok(badUpd.result.isError, 'update missing todo is an error');
 
     const toggled = await waitCall('todos_toggle', { id: todoId });
     assert.ok(toggled.result.content[0].text.includes('已完成'), toggled.result.content[0].text);
