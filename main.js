@@ -155,6 +155,9 @@ function openTrine(url) {
       webPreferences: {
         partition: 'persist:claude-float-trine', // 持久分区：设备密钥/登录态随浮窗 userData 存
         contextIsolation: true, nodeIntegration: false, sandbox: true,
+        // 不节流后台定时器：窗口被切到后台时 Electron 默认会把 rAF/定时器降到 1 次/秒，
+        // trine 的 WebSocket 心跳会被饿死——消息发出去收不到回执，界面永远「发送中」
+        backgroundThrottling: false,
       },
     });
     trineWin.loadURL(url);
