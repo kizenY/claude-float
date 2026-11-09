@@ -22,9 +22,38 @@ function loadConfig(file = FILE) {
   // 只放行 http(s)，拒绝别的 scheme；machineId 同样只认安全字符
   if (!/^https?:\/\/[\w.-]+(:\d+)?(\/[\w./-]*)?$/.test(url)) return null;
   if (!SAFE_ID.test(machineId)) return null;
-  // open：window = 浮窗内建 trine 窗口（默认）；browser = 系统浏览器开页签
-  const open = raw.open === 'browser' ? 'browser' : 'window';
-  return { url, machineId, open };
+  // open：window = 强制浮窗内建 trine 窗口；browser = 系统浏览器开页签；缺省 = 优先唤起已装应用
+  const open = raw.open === 'browser' || raw.open === 'window' ? raw.open : 'auto';
+  // app：已装 trine 应用（PWA）的快捷方式路径；false = 禁用唤起；缺省 = 自动扫开始菜单
+  let app;
+  if (raw.app === false) app = false;
+  else if (typeof raw.app === 'string' && path.isAbsolute(raw.app)) app = raw.app;
+  return { url, machineId, open, ...(app === undefined ? {} : { app }) };
+}
+
+/**
+ * 在开始菜单里找已安装 trine 应用（PWA）的快捷方式。
+ * 浏览器装 PWA 时会在开始菜单放 <应用名>.lnk（Edge/Chrome 同一位置）；启动它
+ * = 已在跑就聚焦、没跑就启动到首页——不经过浏览器链接路由，也不会开新页签。
+ */
+function detectAppShortcut(base = path.join(
+  os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs',
+)) {
+  const hits = [];
+  const walk = (dir, depth) => {
+    if (depth > 2 || hits.length) return;
+    let names;
+    try { names = fs.readdirSync(dir); } catch { return; }
+    for (const name of names) {
+      const full = path.join(dir, name);
+      let st;
+      try { st = fs.statSync(full); } catch { continue; }
+      if (st.isDirectory()) walk(full, depth + 1);
+      else if (/^trine.*\.lnk$/i.test(name)) hits.push(full);
+    }
+  };
+  walk(base, 0);
+  return hits[0] || null;
 }
 
 /** trine web 的会话深链：/s/<machineId>/<sessionId> */
@@ -39,4 +68,4 @@ function homeUrl(cfg) {
   return cfg ? cfg.url : null;
 }
 
-module.exports = { FILE, loadConfig, sessionUrl, homeUrl };
+module.exports = { FILE, loadConfig, sessionUrl, homeUrl, detectAppShortcut };

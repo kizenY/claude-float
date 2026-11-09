@@ -17,6 +17,11 @@ const trineLink = require('./trine-link');
 // trine 联动：配了 ~/.claude-float/trine.json（url + machineId）就把「点会话行 / 宠物托盘 /
 // 起会话」改成打开 trine web 深链，浮窗不再切终端、不再注入控制台。没配置 = 行为照旧
 const TRINE = trineLink.loadConfig();
+// 已安装的 trine 应用（开始菜单里的 PWA 快捷方式）：点会话 = 唤起/聚焦它（不深链）。
+// trine.json 里 "app": false 可禁用自动检测，"app": "路径\\to\\trine.lnk" 可显式指定
+const TRINE_APP = TRINE && TRINE.app !== false
+  ? (TRINE.app || trineLink.detectAppShortcut())
+  : null;
 
 const COLLAPSED_HEIGHT = 40;
 // 宠物窗口 = 一帧 192x208 × zoom 0.78（和 pet.css 对齐）
@@ -138,10 +143,21 @@ function toggleWindow() {
 // 它是一台独立设备：第一次打开要配对一次（真终端跑 trine-agent pair 比对校验码）
 let trineWin = null;
 function openTrine(url) {
-  if (TRINE && TRINE.open === 'browser') {
+  // 优先唤起已装的 trine 应用：启动 .lnk = 已在跑就聚焦那一个窗口、没跑就启动到首页，
+  // 不经过浏览器、不开页签、不做深链（用户自己说不需要精确到会话）。快捷方式失效
+  // （应用被卸载）时退回内建窗口。"open":"window"/"browser" 各自强制对应方式
+  if (TRINE.open !== 'window' && TRINE_APP) {
+    shell.openPath(TRINE_APP).catch(() => openTrineWindow(url));
+    return;
+  }
+  if (TRINE.open === 'browser') {
     shell.openExternal(url);
     return;
   }
+  openTrineWindow(url);
+}
+
+function openTrineWindow(url) {
   if (!trineWin || trineWin.isDestroyed()) {
     const { workArea } = screen.getPrimaryDisplay();
     const width = 480, height = 800;

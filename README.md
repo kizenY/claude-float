@@ -151,7 +151,8 @@ With [trine](https://github.com/smokecat/trine) running on this machine, the wid
 
 With this file present:
 
-- Clicking a session row (or a pet-tray card) opens that session in a dedicated trine window built into the widget — one window for everything: already open means navigate, not another tab. Ended sessions open there too (trine shows the history and can resume it)
+- Clicking a session row (or a pet-tray card) raises the installed trine app when there is one (looked up as a `trine*.lnk` in the Start Menu; `"app": "C:\path	rine.lnk"` to pin it, `"app": false` to disable) — focus if running, launch otherwise, no browser tabs involved
+- Without an installed app it falls back to a dedicated trine window built into the widget — one window for everything: already open means navigate, not another tab. Ended sessions open there too (trine shows the history and can resume it). `"open": "window"` forces this even when the app is installed
 - The ＋ buttons and the task ticket's "start a session & take over" action open trine's new-session sheet instead of spawning a terminal; the ticket still auto-binds the session once it shows up
 - The widget stops injecting keystrokes into consoles while this is on; quick reply keeps working for sessions that registered a channel
 

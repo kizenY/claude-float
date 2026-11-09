@@ -3,7 +3,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { loadConfig, sessionUrl, homeUrl } = require('../trine-link');
+const { loadConfig, sessionUrl, homeUrl, detectAppShortcut } = require('../trine-link');
 
 function tmpConfig(obj) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cf-trine-'));
@@ -19,10 +19,30 @@ function ok(name, fn) {
   console.log(`  ✓ ${name}`);
 }
 
-ok('合法配置：url 去尾斜杠，machineId 保留，open 默认 window', () => {
+ok('合法配置：url 去尾斜杠，machineId 保留，open 默认 auto', () => {
   const cfg = loadConfig(tmpConfig({ url: 'https://trine.example.com:8443/', machineId: 'm-abc123' }));
-  assert.deepStrictEqual(cfg, { url: 'https://trine.example.com:8443', machineId: 'm-abc123', open: 'window' });
+  assert.deepStrictEqual(cfg, { url: 'https://trine.example.com:8443', machineId: 'm-abc123', open: 'auto' });
   assert.strictEqual(loadConfig(tmpConfig({ url: 'https://a.com', machineId: 'm-x', open: 'browser' })).open, 'browser');
+  assert.strictEqual(loadConfig(tmpConfig({ url: 'https://a.com', machineId: 'm-x', open: 'window' })).open, 'window');
+});
+
+ok('app：false 禁用、绝对路径保留、相对路径忽略', () => {
+  assert.strictEqual(loadConfig(tmpConfig({ url: 'https://a.com', machineId: 'm-x', app: false })).app, false);
+  assert.strictEqual(loadConfig(tmpConfig({ url: 'https://a.com', machineId: 'm-x', app: 'C:\\Apps\\trine.lnk' })).app, 'C:\\Apps\\trine.lnk');
+  assert.strictEqual(loadConfig(tmpConfig({ url: 'https://a.com', machineId: 'm-x', app: 'trine.lnk' })).app, undefined);
+});
+
+ok('detectAppShortcut：扫到 trine.lnk（大小写不敏感、含子目录），空目录返回 null', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'cf-lnk-'));
+  assert.strictEqual(detectAppShortcut(base), null);
+  const sub = path.join(base, 'Apps');
+  fs.mkdirSync(sub);
+  fs.writeFileSync(path.join(sub, 'Trine.lnk'), '');
+  assert.strictEqual(detectAppShortcut(base), path.join(sub, 'Trine.lnk'));
+  // 名字里带 trine 前缀的别的应用也认（浏览器装应用命名不稳定）
+  fs.unlinkSync(path.join(sub, 'Trine.lnk'));
+  fs.writeFileSync(path.join(sub, 'trine.app.lnk'), '');
+  assert.strictEqual(detectAppShortcut(base), path.join(sub, 'trine.app.lnk'));
 });
 
 ok('没有配置文件 → null（未开启 trine 模式）', () => {
