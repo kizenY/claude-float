@@ -3,7 +3,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { loadConfig, sessionUrl, homeUrl, detectAppShortcut } = require('../trine-link');
+const { loadConfig, sessionUrl, homeUrl, detectAppShortcut, realBrowserExe, splitArgs } = require('../trine-link');
 
 function tmpConfig(obj) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cf-trine-'));
@@ -79,6 +79,20 @@ ok('sessionUrl：会话 id 带不安全字符 → null（防拼出奇怪 URL）'
 ok('homeUrl：给空配置 → null', () => {
   assert.strictEqual(homeUrl({ url: 'https://t.io', machineId: 'm-1' }), 'https://t.io');
   assert.strictEqual(homeUrl(null), null);
+});
+
+
+ok('realBrowserExe：proxy 壳换成同目录真身，普通 exe 原样', () => {
+  const dir = path.join('C:', 'Chrome');
+  assert.strictEqual(realBrowserExe(path.join(dir, 'chrome_proxy.exe')), path.join(dir, 'chrome.exe'));
+  assert.strictEqual(realBrowserExe(path.join('C:', 'Edge', 'msedge_proxy.exe')), path.join('C:', 'Edge', 'msedge.exe'));
+  assert.strictEqual(realBrowserExe(path.join(dir, 'chrome.exe')), path.join(dir, 'chrome.exe'));
+});
+
+ok('splitArgs：按空白拆、丢空段', () => {
+  assert.deepStrictEqual(splitArgs(' --profile-directory=Default  --app-id=abc '), ['--profile-directory=Default', '--app-id=abc']);
+  assert.deepStrictEqual(splitArgs(''), []);
+  assert.deepStrictEqual(splitArgs(undefined), []);
 });
 
 console.log(`trine-link.test.js 通过 (${n})`);

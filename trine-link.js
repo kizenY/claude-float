@@ -68,4 +68,17 @@ function homeUrl(cfg) {
   return cfg ? cfg.url : null;
 }
 
-module.exports = { FILE, loadConfig, sessionUrl, homeUrl, detectAppShortcut };
+/** 快捷方式里的 *_proxy.exe(chrome_proxy/msedge_proxy)只认自家旗标，
+ * 带 URL 位置参数的启动要换成同目录的真身浏览器进程 */
+function realBrowserExe(target) {
+  return /_proxy\.exe$/i.test(target)
+    ? path.join(path.dirname(target), path.basename(target).replace(/_proxy\.exe$/i, '.exe'))
+    : target;
+}
+
+/** 快捷方式的 Arguments 字符串拆成参数数组(这里的参数都是无空格的旗标，按空白切够用) */
+function splitArgs(argStr) {
+  return String(argStr || '').split(/\s+/).filter(Boolean);
+}
+
+module.exports = { FILE, loadConfig, sessionUrl, homeUrl, detectAppShortcut, realBrowserExe, splitArgs };

@@ -143,10 +143,19 @@ function toggleWindow() {
 // 它是一台独立设备：第一次打开要配对一次（真终端跑 trine-agent pair 比对校验码）
 let trineWin = null;
 function openTrine(url) {
-  // 优先唤起已装的 trine 应用：启动 .lnk = 已在跑就聚焦那一个窗口、没跑就启动到首页，
-  // 不经过浏览器、不开页签、不做深链（用户自己说不需要精确到会话）。快捷方式失效
-  // （应用被卸载）时退回内建窗口。"open":"window"/"browser" 各自强制对应方式
+  // 优先唤起已装的 trine 应用：用快捷方式里的浏览器 + --app-id，把目标 URL 当
+  // 位置参数带上——已在跑 = 聚焦那一个窗口并导航到目标会话，没跑 = 启动并直达。
+  // 这是实测出来的 Windows 传参通道（--app-url-override 无效，位置参数有效），
+  // 不经过浏览器路由、不开页签。失败再逐级退：.lnk 唤起 → 内建窗口。
+  // "open":"window"/"browser" 各自强制对应方式
   if (TRINE.open !== 'window' && TRINE_APP) {
+    try {
+      const s = shell.readShortcutLink(TRINE_APP); // 快捷方式没了会 throw
+      const exe = trineLink.realBrowserExe(s.target);
+      const args = [...trineLink.splitArgs(s.args), url];
+      spawn(exe, args, { detached: true, stdio: 'ignore' }).unref();
+      return;
+    } catch { /* 落到下一级 */ }
     shell.openPath(TRINE_APP).catch(() => openTrineWindow(url));
     return;
   }
