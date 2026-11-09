@@ -32,6 +32,7 @@ Claude Code 跑在终端里，看一眼它说完没有、回一句话，都得�
 - **会话收放行右侧的 ＋**：在该目录起一个普通会话（新 PowerShell 终端，claude 退出后窗口留在提示符方便回看）。「其他」目录没有可启动的路径，不显示
 - **任务单**：按工作区（=快捷启动目录）管事的任务看板，收在每个目录视图头部的任务条里（默认收起；收起行和目录侧栏里带未完成数，默认看未完成，可切已完成）。任务不止一个标题：**内容**（要做什么）、**目标**（做到什么算完）、**进度**（时间线，每干完一段记一条，可选百分比进度条）。**创建/更新/完成/删除都在会话里做**——浮窗对任务只读，任何加载了 claude-float MCP 的会话都能调 `todos_*` 工具（见下）帮你建任务、记进度、看板全览、划掉任务；长任务分多个会话推进，进度也不丢。从任务展开区的「▶ 起会话并接手」起会话会**自动挂单**：浮窗认出该目录冒头的新会话，把会话 id 记进 `~/.claude-float/todos.json`。挂上的会话行带「任·」标签，点标签跳到那个任务所在的目录并高亮；任务上透传所挂会话的 进行中/等待回复 状态，也可以在展开区手动绑定/解绑会话。**任务行右键**：起会话并接手、复制标题/内容/目标、在资源管理器打开工作区目录。任务条展开后不限高，任务和会话一起往下滚，收放那行冻结置顶随时可收
 - **桌面宠物**：屏幕角落蹲一只小宠物，跟会话状态换表情——有会话在跑就原地跑步、等你拍板就歪头、刚干完活跳一下庆祝；等你回复时头上挂个数徽章。**宠物上方常驻一块会话托盘**（显示 进行中/等你/刚完成 的会话，没有就只剩宠物）：Claude + Codex 两边一屏看全，等你拍板的排最前，每条带彩色状态点。多个会话默认**叠成一摞**，底下各露一条标题头：露头那张点到就是切到那个终端（等你/刚完成的随即从托盘消失）；最前面一张在进行中时点它展开会话列表，点哪条切哪条，再点宠物本体收起；只剩一个会话时不叠、直接点。点宠物本体切换浮窗显隐（会话列表展开时点它是收起列表），双击隐藏（托盘里再开）。直接识别 CodeX 的宠物包（`~/.codex/pets/`），自己的宠物放 `~/.claude-float/pets/`，托盘菜单里可开关和挑选
+- **扩展面板**：本机任何程序都能往浮窗里塞一块面板——stdin 收一个 JSON（当前目录 + 会话概况），stdout 回一个 JSON，用固定的「视图词汇」（分组/条目/徽章/详情/动作按钮）描述内容。浮窗只渲染这些数据，**绝不执行扩展代码**；读取永远无副作用；发消息/起会话类动作要两段确认，manifest 里没声明的能力一律拒绝。从命令行安装（`node ext.js add <目录>`，信任级别等同 Claude Code 的 hook，界面上故意不提供安装入口）。契约见 [docs/EXTENSIONS.md](docs/EXTENSIONS.md)，能跑的例子在 `examples/hello-ext/`
 - **窗口**：图钉置顶 · 横线收起成一条 · 叉隐藏到托盘；位置、大小、置顶状态会记住。托盘图标（橙色圆点）单击显示/隐藏，右键菜单可开关「开机自动运行」（默认关）和退出
 - **语音**：默认在线神经语音（和 Edge「大声朗读」同一套，晓晓 / 云希等，接近真人），连不上自动降级系统离线语音
 
@@ -138,6 +139,19 @@ settings=C:\path\to\gateway-settings.json
 
 浮窗底部显示一行 `5-hour 64% · 18:24 重置 · weekly 38% · 10/21 重置`（各重置窗口的已用百分比和重置时间，主进程每分钟拉一次 [官方用量接口](https://docs.bigmodel.cn/cn/coding-plan/overview)）。Z.ai 用户加 `"endpoint": "https://api.z.ai"`。没有这个文件就不显示这一行，其他功能不受影响。
 
+### 扩展
+
+`node ext.js add <扩展目录>` 注册一个扩展（放有 `float-extension.json` 清单的目录）。每个装好的扩展在会话列表下面占一条可收放面板，显示它 `view` 输出的内容——什么语言写都行，只要会「stdin 进一个 JSON、stdout 出一个 JSON」。读取有 15 秒缓存、永远不会执行动作；`prompt.send`（发消息）/ `session.create`（起新会话）类动作要两段确认 + manifest 声明的能力。完整契约：[docs/EXTENSIONS.md](docs/EXTENSIONS.md)；最小示例：`examples/hello-ext/`。
+
+```bash
+node ext.js validate ./examples/hello-ext   # 校验 manifest 和入口
+node ext.js add ./examples/hello-ext        # 注册，浮窗上出现面板
+node ext.js test hello-ext                  # 跑一次 view，打印规范化输出
+node ext.js remove hello-ext
+```
+
+注册表在 `~/.claude-float/extensions.json`。装扩展等于信任它的代码（以你的用户身份运行，和 Claude Code hook 同级），所以只有命令行入口。
+
 ### 环境变量
 
 | 变量 | 作用 |
@@ -198,6 +212,8 @@ renderer.js         浮窗 UI 与朗读调度
 pet.js / pet.html / pet-renderer.js   桌面宠物：宠物包解析 + 宠物窗口
 sessions.js         读 ~/.claude/projects 会话记录 + 状态推测
 codex-sessions.js   读 ~/.codex/sessions 会话记录 + 状态推测 + 活进程匹配
+extensions.js       扩展系统：manifest/注册表校验、调用协议、视图词汇检查
+ext.js              扩展管理命令行（add / list / enable / test / remove）
 channel/server.js   Claude Code 频道 server（快速回复的入口）
 cf.cmd / spawn-cf.vbs / start.vbs   启动脚本（Windows 控制台句柄的几个坑都写在代码注释里）
 ```

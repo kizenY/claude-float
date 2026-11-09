@@ -410,6 +410,71 @@ ipcMain.handle('todos:spawn', (_e, id) => {
   return { ok: true };
 });
 
+// ---- 扩展面板：外部进程按固定「视图词汇」吐数据，浮窗只渲染、绝不执行扩展代码 ----
+// 契约见 docs/EXTENSIONS.md。三原则：读取永远无副作用；动作只在用户点击后执行
+//（发消息/起会话类效果由 renderer 两段确认后才走到这里）；能力未声明一律拒绝。
+const extSys = require('./extensions');
+
+// 给扩展的会话上下文：只有元信息（id/标题/状态/目录），不含对话内容
+function extContextSessions(cwd) {
+  try {
+    const list = sessions.list(200).map((s) => ({ id: s.id, title: s.title, status: s.status, cwd: s.cwd }));
+    return cwd ? list.filter((s) => todos.sameDir(s.cwd, cwd)) : list;
+  } catch { return []; }
+}
+
+function findExt(id) {
+  const hit = extSys.listInstalled().find((x) => x.entry.id === id && x.entry.enabled !== false);
+  if (!hit) return { error: `扩展 "${id}" 没装或没启用` };
+  if (hit.error) return { error: hit.error };
+  return { manifest: hit.manifest };
+}
+
+ipcMain.handle('ext:list', () => extSys.listInstalled()
+  .filter((x) => x.entry.enabled !== false && x.manifest && x.manifest.contributes.panel)
+  .map(({ manifest }) => ({
+    id: manifest.id,
+    name: manifest.name,
+    version: manifest.version,
+    title: (manifest.contributes.panel && manifest.contributes.panel.title) || manifest.name,
+  })));
+
+ipcMain.handle('ext:view', async (_e, id, cwd, force) => {
+  const hit = findExt(String(id || ''));
+  if (hit.error) return { ok: false, error: { code: 'missing', message: hit.error } };
+  const dir = typeof cwd === 'string' && cwd ? cwd : null; // 只当数据上下文，不做文件操作
+  const res = await extSys.readView(hit.manifest, {
+    cwd: dir, locale: app.getLocale ? app.getLocale() : '',
+    sessions: extContextSessions(dir), force: !!force,
+  });
+  return res.ok ? extSys.parseViewOutput(res.json) : { ok: false, error: res.error };
+});
+
+// 动作执行：本地效果（插入/复制/刷新）由 renderer 直接做，这里只跑要经主进程的
+// prompt.send（复用 sendTo）和 session.create（只认 quick-dirs 白名单）
+ipcMain.handle('ext:action', async (_e, { extId, effects } = {}) => {
+  const hit = findExt(String(extId || ''));
+  if (hit.error) return { ok: false, message: hit.error };
+  try { extSys.checkEffects(effects || [], hit.manifest.capabilities); }
+  catch (e) { return { ok: false, message: e.message }; }
+  const results = [];
+  for (const e of effects) {
+    if (e.type === 'prompt.send') {
+      results.push({ type: e.type, ...(await sendTo(e.sessionId, e.text)) });
+    } else if (e.type === 'session.create') {
+      if (!QUICK_DIRS.some((d) => d.path === e.cwd)) {
+        results.push({ type: e.type, ok: false, message: `目录不在启动目录白名单里：${e.cwd}` });
+      } else {
+        spawnCfTerminal(e.cwd);
+        results.push({ type: e.type, ok: true, message: '已起新会话' });
+      }
+    }
+  }
+  extSys.invalidate(String(extId)); // 动作可能改了扩展背后的数据，缓存作废
+  const bad = results.find((r) => !r.ok);
+  return { ok: !bad, message: (bad && bad.message) || (results[0] && results[0].message) || '已执行', results };
+});
+
 // 右键菜单用的两个小动作：复制走主进程剪贴板（浮窗平时不可聚焦，navigator.clipboard 不稳），
 // 开目录限「绝对路径且真实存在且是目录」——会话的 cwd 常不在 quick-dirs 白名单里（「其他」区），也要能开
 ipcMain.handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text || '')); });

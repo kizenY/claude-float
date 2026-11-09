@@ -657,3 +657,64 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
 
 /* 徽章第三色：受阻/红灯语义（会话/任务只有 working/waiting 两色） */
 .chip.danger { color: var(--danger); background: var(--danger-soft); }
+
+/* ---- 扩展面板：外部进程吐的固定视图词汇，浮窗只渲染不执行 ----
+   每个已注册扩展一条收放行（不冻结置顶，排在会话列表下面）+ 分组/条目/徽章/动作 */
+.ext-panel { flex: none; }
+.ext-head { position: static; } /* 不跟着任务/会话收放行冻结，免得滚上来盖住会话 */
+.ext-refresh svg { width: 13px; height: 13px; }
+.ext-body { padding: 2px 0 6px; }
+.ext-section { padding: 0 6px; }
+.ext-section-title {
+  padding: 7px 6px 2px;
+  color: var(--muted); font-size: 10.5px; font-weight: 600;
+}
+.ext-item { padding: 6px 8px; border-radius: 9px; }
+.ext-item:hover { background: var(--hover); }
+.ext-item.has-detail { cursor: pointer; }
+.ext-item-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ext-item-title {
+  flex: 1; min-width: 0;
+  font-size: 12px; font-weight: 600; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ext-item-meta { flex: none; color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.ext-item-sub {
+  margin-top: 2px;
+  color: var(--muted); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ext-item-detail {
+  margin-top: 4px;
+  color: var(--fg); font-size: 11.5px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
+.ext-badge {
+  flex: none; display: inline-grid; place-items: center;
+  padding: 1px 6px; border-radius: 6px;
+  background: var(--hover); color: var(--muted);
+  font-size: 9.5px; font-weight: 600; line-height: 1.4;
+}
+.ext-badge.info { background: var(--wait-soft); color: var(--wait); }
+.ext-badge.success { background: var(--accent-soft); color: var(--accent); }
+.ext-badge.warning { background: var(--danger-soft); color: #a05a17; }
+.ext-badge.danger { background: var(--danger-soft); color: var(--danger); }
+@media (prefers-color-scheme: dark) {
+  .ext-badge.warning { color: #d8a06a; }
+}
+.ext-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.ext-toolbar { margin: 6px 8px 0; }
+.ext-act {
+  padding: 2px 9px;
+  border: 1px solid var(--line); border-radius: 7px;
+  background: transparent; color: var(--muted);
+  font-size: 11px; cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast), background-color var(--t-fast);
+}
+.ext-act:hover { color: var(--fg); background: var(--bg); border-color: var(--muted); }
+.ext-act.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ext-act.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
+.ext-act.danger { color: var(--danger); }
+.ext-act.armed { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+.ext-hint { padding: 10px 12px; color: var(--muted); font-size: 11.5px; }
+.ext-error { padding: 10px 12px; color: var(--danger); font-size: 11.5px; }

@@ -4,7 +4,7 @@ const synth = window.speechSynthesis;
 const { sameWs, matchDir } = window.Tabs;
 
 const settings = (() => {
-  const defaults = { rate: 1.1, voice: 'edge:zh-CN-XiaoxiaoNeural', mode: 'claude', activeTab: '', todoStripOpen: false, sessStripOpen: true, railOpen: false, speakBtn: false, replyBtn: false };
+  const defaults = { rate: 1.1, voice: 'edge:zh-CN-XiaoxiaoNeural', mode: 'claude', activeTab: '', todoStripOpen: false, sessStripOpen: true, railOpen: false, speakBtn: false, replyBtn: false, extOpen: {} };
   try {
     const saved = JSON.parse(localStorage.getItem('settings') || '{}');
     return {
@@ -18,6 +18,7 @@ const settings = (() => {
       railOpen: saved.railOpen === true,
       speakBtn: saved.speakBtn === true,
       replyBtn: saved.replyBtn === true,
+      extOpen: saved.extOpen && typeof saved.extOpen === 'object' ? saved.extOpen : {},
     };
   } catch { return defaults; }
 })();
@@ -444,12 +445,13 @@ function setComposerStatus(text, kind = '') {
   el.className = 'composer-status' + (kind ? ` ${kind}` : '');
 }
 
-async function openComposer(s) {
+async function openComposer(s, prefill) {
   closeSettings();
   replyTo = s;
   $('composer').hidden = false;
   $('composer-title').textContent = s.title;
   setComposerStatus(s.status === 'working' ? `${modeInfo().agent} 还在干活，消息会排队` : '');
+  if (prefill) $('composer-input').value = String(prefill).slice(0, 32 * 1024);
   render();
   // 浮窗平时不可聚焦（点列表行不抢前台），要打字了才临时恢复
   await window.api.setFocusable(true);
@@ -638,6 +640,7 @@ function setActiveTab(tab) {
   updateSessionNew();
   render();
   if (stripOpen) renderTodos();
+  refreshExts(); // 扩展的目录上下文换了，开着的面板重拉
 }
 
 // 会话收放行右侧的 ＋：在当前目录起新会话；「其他」Tab 没有可启动的目录，不显示
@@ -656,6 +659,7 @@ window.api.quickDirs().then((dirs) => {
   updateSessionNew();
   render();
   if (stripOpen) renderTodos();
+  refreshExts();
 }).catch(() => {
   restoreActiveTab();
   renderDirRail();
@@ -1095,6 +1099,182 @@ $('session-new').addEventListener('click', async () => {
   }
 });
 
+// ---- 扩展面板：已注册扩展（node ext.js add）各占一条收放行，排在会话列表下面 ----
+// 浮窗只渲染扩展进程吐出的固定视图词汇（分组/条目/徽章/详情/动作），不执行任何扩展代码。
+// 读取永远无副作用：只在展开/切目录/点动作后拉一次（主进程还有 15s 缓存）；
+// 发消息/起会话类动作两段确认后才执行，确认前后内容不变。
+let extPanels = [];
+const extViews = new Map();   // 扩展 id -> { loading? } | { ok, view? } | { ok:false, error? }
+const extDetail = new Map();  // 扩展 id -> 展开详情的条目 id
+let extOpen = { ...settings.extOpen };
+
+const EXT_REFRESH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+const extTitle = (p) => p.title || p.name || p.id;
+const extBodyEl = (id) => document.getElementById(`ext-body-${CSS.escape(id)}`);
+
+async function refreshExts() {
+  try { extPanels = await window.api.extList(); } catch { return; }
+  renderExtStrips();
+  for (const p of extPanels) if (extOpen[p.id]) fetchExtView(p.id);
+}
+
+async function fetchExtView(id, force) {
+  extViews.set(id, { loading: true });
+  renderExtStrips();
+  try {
+    const dir = activeDir();
+    extViews.set(id, await window.api.extView(id, dir ? dir.path : null, !!force));
+  } catch (e) {
+    extViews.set(id, { ok: false, error: { message: String(e.message || e) } });
+  }
+  renderExtStrips();
+}
+
+function extBadgeEl(bg) {
+  const b = el('span', 'ext-badge' + (bg.tone ? ' ' + bg.tone : ''), bg.text);
+  if (bg.title) b.title = bg.title;
+  return b;
+}
+
+// 动作按钮：带发消息/起会话效果、或标了 confirm/destructive 的要两段确认（先亮「确认执行？」）
+function extActionButton(p, action) {
+  const btn = el('button', 'ext-act' + (action.primary ? ' primary' : '') + (action.destructive ? ' danger' : ''));
+  btn.type = 'button';
+  btn.textContent = action.label;
+  const needConfirm = (action.effects || []).some((e) => e.type === 'prompt.send' || e.type === 'session.create')
+    || action.confirm != null || action.destructive === true;
+  if (action.confirm) btn.title = action.confirm;
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (needConfirm && !btn.classList.contains('armed')) {
+      btn.classList.add('armed');
+      btn.dataset.label = btn.textContent;
+      btn.textContent = action.confirm || '确认执行？';
+      setTimeout(() => {
+        if (!btn.classList.contains('armed')) return;
+        btn.classList.remove('armed');
+        if (btn.dataset.label) btn.textContent = btn.dataset.label;
+      }, 3000);
+      return;
+    }
+    btn.classList.remove('armed');
+    if (btn.dataset.label) btn.textContent = btn.dataset.label;
+    await runExtAction(p, action);
+  });
+  return btn;
+}
+
+async function runExtAction(p, action) {
+  const effects = action.effects || [];
+  // 本地效果浮窗直接做：复制、刷新、往快速回复框预填（目标会话不在了就退化成复制）
+  for (const e of effects) {
+    if (e.type === 'copy') await copyText(e.text, '已复制');
+    else if (e.type === 'refresh') fetchExtView(p.id, true);
+    else if (e.type === 'prompt.insert') {
+      const s = sessions.find((x) => x.id === e.sessionId);
+      if (s && (s.channel || s.pid)) await openComposer(s, e.text);
+      else await copyText(e.text, '目标会话不在了，文字已复制到剪贴板');
+    }
+  }
+  // 要经主进程的效果（发消息/起会话）：两段确认已过，主进程再查一遍能力
+  if (effects.some((e) => e.type === 'prompt.send' || e.type === 'session.create')) {
+    const dir = activeDir();
+    try {
+      const res = await window.api.extAction({ extId: p.id, actionId: action.id, effects, cwd: dir ? dir.path : null });
+      flash(res.message || (res.ok ? '已执行' : '执行失败'));
+    } catch (err) {
+      flash(`执行失败：${String(err.message || err)}`);
+    }
+    fetchExtView(p.id, true); // 动作可能改了扩展背后的数据，刷新一眼
+  }
+}
+
+function extItemEl(p, it) {
+  const row = el('div', 'ext-item');
+  const top = el('div', 'ext-item-top');
+  top.append(el('span', 'ext-item-title', it.title));
+  if (it.meta) top.append(el('span', 'ext-item-meta', it.meta));
+  if (it.badges) for (const bg of it.badges) top.append(extBadgeEl(bg));
+  row.append(top);
+  if (it.subtitle) row.append(el('div', 'ext-item-sub', it.subtitle));
+  if (it.detail && extDetail.get(p.id) === it.id) row.append(el('div', 'ext-item-detail', it.detail));
+  if (it.actions && it.actions.length) {
+    const bar = el('div', 'ext-actions');
+    for (const a of it.actions) bar.append(extActionButton(p, a));
+    row.append(bar);
+  }
+  if (it.detail) {
+    row.classList.add('has-detail');
+    row.title = '点击展开/收起详情';
+    row.addEventListener('click', () => {
+      extDetail.set(p.id, extDetail.get(p.id) === it.id ? null : it.id);
+      renderExtStrips();
+    });
+  }
+  return row;
+}
+
+function renderExtBody(p) {
+  const body = extBodyEl(p.id);
+  if (!body) return;
+  const v = extViews.get(p.id);
+  if (!v || v.loading) { body.replaceChildren(el('div', 'ext-hint', '读取中…')); return; }
+  if (!v.ok) { body.replaceChildren(el('div', 'ext-error', (v.error && v.error.message) || '扩展没返回内容')); return; }
+  const view = v.view;
+  const frag = document.createDocumentFragment();
+  if (view.toolbar && view.toolbar.length) {
+    const bar = el('div', 'ext-actions ext-toolbar');
+    for (const a of view.toolbar) bar.append(extActionButton(p, a));
+    frag.append(bar);
+  }
+  if (!view.sections.length && view.empty != null) frag.append(el('div', 'ext-hint', view.empty));
+  for (const sec of view.sections) {
+    const box = el('div', 'ext-section');
+    if (sec.title) box.append(el('div', 'ext-section-title', sec.title));
+    if (!sec.items.length && sec.empty != null) box.append(el('div', 'ext-hint', sec.empty));
+    for (const it of sec.items) box.append(extItemEl(p, it));
+    frag.append(box);
+  }
+  body.replaceChildren(frag);
+}
+
+function renderExtStrips() {
+  $('ext-panels').replaceChildren(...extPanels.map((p) => {
+    const open = !!extOpen[p.id];
+    const panel = el('div', 'ext-panel');
+    const head = el('div', 'strip-head ext-head');
+    const toggle = el('button', 'strip-toggle');
+    toggle.type = 'button';
+    toggle.title = '展开/收起扩展面板';
+    toggle.innerHTML = `<svg class="strip-caret${open ? ' open' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    toggle.append(el('span', 'strip-title', extTitle(p)));
+    const v = extViews.get(p.id);
+    const count = v && v.ok ? v.view.sections.reduce((n, s) => n + s.items.length, 0) : 0;
+    if (count) toggle.append(el('span', 'strip-count', count > 99 ? '99+' : String(count)));
+    toggle.addEventListener('click', () => {
+      extOpen[p.id] = !extOpen[p.id];
+      settings.extOpen = { ...extOpen };
+      saveSettings();
+      renderExtStrips();
+      if (extOpen[p.id]) fetchExtView(p.id);
+    });
+    const ref = el('button', 'strip-plus ext-refresh');
+    ref.type = 'button';
+    ref.title = '刷新这个扩展';
+    ref.innerHTML = EXT_REFRESH_ICON;
+    ref.addEventListener('click', (e) => { e.stopPropagation(); fetchExtView(p.id, true); });
+    head.append(toggle, ref);
+    const bodyWrap = el('div', 'strip-body');
+    bodyWrap.hidden = !open;
+    const body = el('div', 'ext-body');
+    body.id = `ext-body-${p.id}`;
+    bodyWrap.append(body);
+    panel.append(head, bodyWrap);
+    return panel;
+  }));
+  for (const p of extPanels) renderExtBody(p);
+}
+
 // ---- 形态切换按钮 ----
 $('mode-claude').addEventListener('click', () => setMode('claude'));
 $('mode-codex').addEventListener('click', () => setMode('codex'));
@@ -1126,6 +1306,7 @@ document.addEventListener('keydown', (e) => {
   if (!$('composer').hidden) { closeComposer(); return; }   // 再关回复框（textarea 里自处理，这里是兜底）
   if (todoPicking) { todoPicking = null; renderTodos(); return; } // 取消挑会话
   if (todoExpanded) { todoExpanded = null; renderTodos(); return; } // 收起任务详情
+  if (extDetail.size) { extDetail.clear(); renderExtStrips(); return; } // 收起扩展条目详情
   if (stripOpen) {                                          // 收起任务区（也算一次显式收起，记住状态）
     stripOpen = false;
     settings.todoStripOpen = false;

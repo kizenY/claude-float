@@ -32,6 +32,7 @@ Claude Code runs in a terminal, which means switching windows just to check whet
 - **The session strip's `+`** — sits on the session list's frozen header row and starts a plain session in that directory (new PowerShell window; the window stays at the prompt after Claude exits so you can scroll back). Hidden on the "Other" tab, which has no launchable directory
 - **Task tickets** — a task board per quick-launch directory ("workspace"), shown in the collapsible strip at the top of each view (open count on the collapsed row and on the directory rail; defaults to open ones, switch to see done). A task is more than a title: **description** (what to do), **goal** (what "done" means) and a **progress timeline** (one entry per work session, optional 0-100% bar). **Tasks are created, updated, completed and deleted from inside a session** — the widget is read-only on task content: any session that loads the claude-float MCP can call the `todos_*` tools (see below) to add tasks, log progress, list the board or close tasks, so a long task spread over multiple sessions never loses its progress. Start a session from a task (the ▶ button in its expanded row) and the new session is **auto-bound** to it: the widget notices the new session in that directory and records its id (`~/.claude-float/todos.json`). Bound sessions get a task tag on the session row — click it to jump to the task's directory and highlight it; the task shows the live working/waiting status of its sessions. Manual bind/unbind from the task's expanded row. **Right-click a task** for: start-and-take-over, copy title/description/goal, open the workspace folder in Explorer. With the strip open there is no fixed height cap — tasks and sessions scroll together, and the strip header stays frozen at the top so it can always be collapsed
 - **Desktop pet** — a little companion squatting in a screen corner that mirrors your sessions: runs in place while a session works, tilts its head when one waits for you, jumps to celebrate a finished task, and wears a count badge when sessions await your input. **A session tray sits above the pet** (working / waiting / just-finished sessions; none → just the pet): waiting-first ordering, colored status dots; finished sessions linger as "idle" until you've looked at them. With more than one session the tray stacks into a pile with each card's title peeking out (waiting first): click a peeking card to jump straight to that terminal (it then leaves the tray); when the front card is a working one, clicking it expands the full list — click any row to jump, click the pet to fold it back. Click the pet to toggle the widget, double-click to hide (tray menu brings it back). Reads Codex pet packs from `~/.codex/pets/` out of the box; your own pets go into `~/.claude-float/pets/`. Toggle and pick pets from the tray menu
+- **Extensions** — any local program can render a panel inside the widget: it receives a JSON on stdin (current directory + session metadata) and answers a JSON on stdout with a fixed "view vocabulary" (sections / items / badges / details / action buttons). The widget only renders that data — it never executes extension code; reading has no side effects; actions with side effects (send a message / start a session) require a two-step confirm, and capabilities not declared in the extension's manifest are always rejected. Install from the CLI (`node ext.js add <dir>`, same trust level as a Claude Code hook — there is deliberately no install UI). See [docs/EXTENSIONS.md](docs/EXTENSIONS.md) for the contract and `examples/hello-ext/` for a working example
 - **Widget niceties** — pin / collapse to a 40px bar / hide to tray; position, size and pinned state are remembered. Tray icon toggles visibility; tray menu has optional "run at login" (off by default)
 - **Text-to-speech**: online neural voices by default (same voices as Edge "Read Aloud" — natural-sounding), or offline system voices as fallback
 
@@ -138,6 +139,19 @@ settings=C:\path\to\gateway-settings.json
 
 One line at the widget's bottom shows `5-hour 64% · 18:24 reset · weekly 38% · 10/21 reset` (used percentage and reset time per window; the main process polls the [official usage endpoint](https://docs.bigmodel.cn/cn/coding-plan/overview) once a minute). On Z.ai add `"endpoint": "https://api.z.ai"`. No file → the line stays hidden, nothing else changes.
 
+### Extensions
+
+`node ext.js add <extension-dir>` registers an extension (a directory with a `float-extension.json` manifest). Each registered extension gets one collapsible panel strip under the session list, showing whatever the extension's `view` op prints — in any language, as long as it speaks one JSON in and one JSON out. Reads are cached for 15s and never run actions; `prompt.send` / `session.create` actions need a two-step confirm and a declared capability. Full contract: [docs/EXTENSIONS.md](docs/EXTENSIONS.md); minimal example: `examples/hello-ext/`.
+
+```bash
+node ext.js validate ./examples/hello-ext   # check manifest + entry
+node ext.js add ./examples/hello-ext        # register — panel appears in the widget
+node ext.js test hello-ext                  # run one view, print normalized output
+node ext.js remove hello-ext
+```
+
+The registry lives in `~/.claude-float/extensions.json`. Installing an extension trusts its code (it runs as your user, like a Claude Code hook) — that's why it's CLI-only.
+
 ### Environment variables
 
 | Variable | Purpose |
@@ -198,6 +212,8 @@ renderer.js         widget UI + speech orchestration
 pet.js / pet.html / pet-renderer.js   desktop pet: pack loading + pet window
 sessions.js         reads ~/.claude/projects transcripts + status guessing
 codex-sessions.js   reads ~/.codex/sessions rollouts + status guessing + live-process matching
+extensions.js       extension system: manifest/registry validation, spawn protocol, view-vocabulary checks
+ext.js              extension management CLI (add / list / enable / test / remove)
 channel/server.js   Claude Code channel server (quick-reply entry point)
 cf.cmd / spawn-cf.vbs / start.vbs   launchers (several Windows console-handle
                     pitfalls are documented in code comments)

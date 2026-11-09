@@ -1,0 +1,12 @@
+{
+  "apiVersion": 1,
+  "id": "hello-ext",
+  "name": "示例扩展",
+  "version": "0.1.0",
+  "description": "最小可用的浮窗扩展：展示当前目录和会话概况，带插入/复制两个动作",
+  "entry": ["node", "bin/hello.js"],
+  "contributes": {
+    "panel": { "title": "示例" }
+  },
+  "capabilities": ["prompt.insert"]
+}
