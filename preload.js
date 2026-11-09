@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   toggleCollapse: () => ipcRenderer.invoke('win:collapse'),
   hide: () => ipcRenderer.invoke('win:hide'),
   quickDirs: () => ipcRenderer.invoke('dirs:list'),
+  trineMode: () => ipcRenderer.invoke('trine:mode'),
   spawn: (dir, mode) => ipcRenderer.invoke('session:spawn', dir, mode),
   sessionHide: (id, title) => ipcRenderer.invoke('session:hide', { id, title }),
   todosList: () => ipcRenderer.invoke('todos:list'),

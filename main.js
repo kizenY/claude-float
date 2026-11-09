@@ -12,6 +12,11 @@ const reply = require('./reply');
 const focus = require('./focus');
 const petMod = require('./pet');
 const glmUsage = require('./glm-usage');
+const trineLink = require('./trine-link');
+
+// trine 联动：配了 ~/.claude-float/trine.json（url + machineId）就把「点会话行 / 宠物托盘 /
+// 起会话」改成打开 trine web 深链，浮窗不再切终端、不再注入控制台。没配置 = 行为照旧
+const TRINE = trineLink.loadConfig();
 
 const COLLAPSED_HEIGHT = 40;
 // 宠物窗口 = 一帧 192x208 × zoom 0.78（和 pet.css 对齐）
@@ -263,13 +268,14 @@ async function sendTo(id, text) {
     const busy = s.status === 'working';
     const r = await reply.sendViaChannel({ channel, text, file: s.file, timeoutMs: busy ? 10000 : 3000 });
     if (r.delivered) return r;
-    if (busy || !pid) return r;
+    if (busy || !pid || TRINE) return r; // trine 模式不开控制台注入，频道没送达就如实报
     const t = await sendViaPid(pid, text, s.file);
     if (t.ok) return { ...t, message: `频道没送达，已改用直接打字：${t.message}` };
     return { ...r, message: `${r.message}；终端发送也失败了：${t.message}` };
   }
-  // 没频道（普通 claude 会话）但有活窗口：直接往终端打字也能回
-  if (pid) return sendViaPid(pid, text, s.file);
+  // 没频道（普通 claude 会话）但有活窗口：直接往终端打字也能回；trine 模式下不碰终端，请去 trine 回
+  if (pid && !TRINE) return sendViaPid(pid, text, s.file);
+  if (pid && TRINE) return { ok: false, message: '这个会话没有频道（多半是 trine 起的），请在 trine 里回复它' };
   return { ok: false, message: '这个会话已经结束了，没法回复' };
 }
 
@@ -278,18 +284,29 @@ async function sendToCodex(id, text) {
   const s = codex.list(200).find((x) => x.id === id);
   if (!s) return { ok: false, message: '找不到这个会话' };
   const pid = await codex.pidFor(id);
-  if (!pid) {
-    return { ok: false, message: '这个 Codex 会话没在终端里跑，点列表行用 codex resume 恢复后再回' };
+  if (!pid || TRINE) {
+    return { ok: false, message: TRINE
+      ? '请在 trine 里回复这个 Codex 会话'
+      : '这个 Codex 会话没在终端里跑，点列表行用 codex resume 恢复后再回' };
   }
   return sendViaPid(pid, text, s.file);
 }
 ipcMain.handle('sessions:send', (_e, { id, text, mode }) => (
   mode === 'codex' ? sendToCodex(id, text) : sendTo(id, text)
 ));
-// 点列表项：有活窗口就切到前台（已在前台则最小化）；会话已结束则新开一个终端
+// 点列表项 / 宠物托盘行：trine 模式下统一改成在系统浏览器打开 trine web 的会话深链
+// （/s/<machineId>/<sessionId>），浮窗不再切终端；已结束的会话也走这里（trine 里看历史/续聊）。
+// 未配置 trine 时行为照旧：有活窗口就切到前台（已在前台则最小化）；会话已结束则新开一个终端
 // 恢复它（Claude 用 cf --resume，Codex 用 codex resume）。pid 只在主进程这边查，
 // renderer 传不进任意 pid
 ipcMain.handle('session:focus', async (_e, id, mode) => {
+  if (TRINE) {
+    const url = trineLink.sessionUrl(TRINE, id);
+    if (url) {
+      await shell.openExternal(url);
+      return { ok: true, trine: true };
+    }
+  }
   if (mode === 'codex') {
     const livePid = await codex.pidFor(id);
     if (livePid) return focus.toPid(livePid);
@@ -328,6 +345,8 @@ function loadQuickDirs() {
 }
 const QUICK_DIRS = loadQuickDirs();
 ipcMain.handle('dirs:list', () => QUICK_DIRS);
+// renderer 要知道 trine 模式开了没（开了就不给无频道的会话显示快速回复按钮）
+ipcMain.handle('trine:mode', () => !!TRINE);
 // 经 wscript 跳板起一个 cf 终端（新窗口，工作目录 dir）。extraArgs 会原样拼进 cf.cmd
 // 的命令行（如 "--resume <id>"，只传无空格无特殊字符的内容）。
 // 浮窗是 GUI 程序、没有控制台。直接 spawn 控制台子进程时 Windows 会分一个新窗口，
@@ -382,6 +401,11 @@ ipcMain.handle('session:spawn', (_e, dir, mode) => {
   // 只白名单里的目录可以起，防止 renderer 被注入任意路径
   const target = QUICK_DIRS.find((d) => d.path === dir);
   if (!target) throw new Error('bad dir');
+  // trine 模式：开 trine 首页（新建会话的 sheet 在那里选目录，不支持 URL 预选）
+  if (TRINE) {
+    shell.openExternal(trineLink.homeUrl(TRINE));
+    return { ok: true, trine: true, name: target.name };
+  }
   if (mode === 'codex') spawnCodexTerminal(target.path);
   else spawnCfTerminal(target.path);
   return { ok: true, name: target.name };
@@ -404,6 +428,13 @@ ipcMain.handle('todos:spawn', (_e, id) => {
   const t = todos.list().find((x) => x.id === String(id));
   if (!t || t.status !== 'open' || !QUICK_DIRS.some((d) => d.path === t.ws)) {
     return { ok: false, message: '这个任务不在了，或工作区不在启动目录列表里' };
+  }
+  // trine 模式：开 trine 首页让用户在那里建会话（选这个任务的工作区目录）；
+  // 自动挂单照常 arm——trine 起的会话同样写 transcript，冒头就会被挂上
+  if (TRINE) {
+    armPending(t.id, t.ws);
+    shell.openExternal(trineLink.homeUrl(TRINE));
+    return { ok: true, trine: true };
   }
   armPending(t.id, t.ws);
   spawnCfTerminal(t.ws);

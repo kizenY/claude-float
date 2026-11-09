@@ -139,6 +139,24 @@ settings=C:\path\to\gateway-settings.json
 
 One line at the widget's bottom shows `5-hour 64% · 18:24 reset · weekly 38% · 10/21 reset` (used percentage and reset time per window; the main process polls the [official usage endpoint](https://docs.bigmodel.cn/cn/coding-plan/overview) once a minute). On Z.ai add `"endpoint": "https://api.z.ai"`. No file → the line stays hidden, nothing else changes.
 
+### trine remote (optional)
+
+With [trine](https://github.com/smokecat/trine) running on this machine, the widget can hand sessions over to its web UI instead of the terminal.
+
+`~/.claude-float/trine.json`:
+
+```json
+{ "url": "https://your-trine-relay.example.com", "machineId": "m-xxxxxxxx" }
+```
+
+With this file present:
+
+- Clicking a session row (or a pet-tray card) opens that session in trine web in your default browser — ended sessions too (trine shows the history and can resume it there)
+- The ＋ buttons and the task ticket's "start a session & take over" action open trine's new-session sheet instead of spawning a terminal; the ticket still auto-binds the session once it shows up
+- The widget stops injecting keystrokes into consoles while this is on; quick reply keeps working for sessions that registered a channel
+
+The machine id is what `trine-agent status` prints (`machine=m-…`), and the browser that opens must be a paired trine device. No file → terminal behavior, nothing changes.
+
 ### Extensions
 
 `node ext.js add <extension-dir>` registers an extension (a directory with a `float-extension.json` manifest). Each registered extension gets one collapsible panel strip under the session list, showing whatever the extension's `view` op prints — in any language, as long as it speaks one JSON in and one JSON out. Reads are cached for 15s and never run actions; `prompt.send` / `session.create` actions need a two-step confirm and a declared capability. Full contract: [docs/EXTENSIONS.md](docs/EXTENSIONS.md); minimal example: `examples/hello-ext/`.

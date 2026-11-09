@@ -30,6 +30,9 @@ let sessions = [];
 let speakingId = null;
 let speakToken = 0;
 let replyTo = null; // 正在回复的会话
+// trine 联动：主进程配了 ~/.claude-float/trine.json 就是 trine 模式（点行开 trine web，不走终端）
+let trineMode = false;
+window.api.trineMode().then((v) => { trineMode = v; }).catch(() => {});
 
 // ---- 形态切换：Claude Code / Codex，一键换列表、换主题色、换启动命令 ----
 let mode = settings.mode;
@@ -130,15 +133,17 @@ function render() {
       meta.append(rowButton(speaking ? STOP_ICON : SPEAK_ICON, speaking ? '停止朗读' : '朗读最新回复', () => toggleSpeak(s)));
     }
     if (settings.replyBtn) {
+      // trine 模式下只有带频道的会话能快速回复（trine 起的会话没有频道，回它请去 trine web）
+      const canReply = s.channel || (!trineMode && s.pid);
       const replyOffHint = mode === 'codex'
-        ? '这个 Codex 会话没在终端里跑，点列表行恢复后再回'
-        : '这个会话已经结束了，没法直接回复';
-      const replyBtn = rowButton(REPLY_ICON, s.channel || s.pid ? '快速回复' : replyOffHint, () => {
-        if (s.channel || s.pid) openComposer(s);
-        else flash('会话已经结束，没法回复');
+        ? (trineMode ? '请在 trine 里回复这个 Codex 会话' : '这个 Codex 会话没在终端里跑，点列表行恢复后再回')
+        : (trineMode && !s.channel ? '这个会话没有频道，请在 trine 里回复它' : '这个会话已经结束了，没法直接回复');
+      const replyBtn = rowButton(REPLY_ICON, canReply ? '快速回复' : replyOffHint, () => {
+        if (canReply) openComposer(s);
+        else flash(replyOffHint);
       });
       replyBtn.classList.add('reply-btn');
-      if (!s.channel && !s.pid) replyBtn.classList.add('off');
+      if (!canReply) replyBtn.classList.add('off');
       meta.append(replyBtn);
     }
 
@@ -264,11 +269,13 @@ async function refreshPlan() {
   } catch { /* 拉不到就藏起来 */ }
 }
 
-// 点列表项：有窗口就切到会话的终端前台/后台；会话已结束则新开终端恢复它（快捷回复走 ↩ 按钮，不走这里）
+// 点列表项：trine 模式在浏览器打开 trine 会话；否则有窗口就切到会话的终端前台/后台，
+// 会话已结束则新开终端恢复它（快捷回复走 ↩ 按钮，不走这里）
 async function focusSession(s) {
   try {
     const res = await window.api.focus(s.id, mode);
     if (!res.ok) flash(res.message || '没找到会话的窗口');
+    else if (res.trine) flash('已在浏览器打开 trine 会话');
     else if (res.resumed) flash('已在新终端恢复这个会话');
   } catch (e) {
     flash(`切换失败：${String(e.message || e)}`);
@@ -745,7 +752,7 @@ function openTodoMenu(t, x, y) {
       closeCtxMenu();
       try {
         const res = await window.api.todosSpawn(t.id);
-        flash(res.ok ? '已起会话，会话上线后自动挂单' : (res.message || '启动失败'));
+        flash(res.ok ? (res.trine ? '已打开 trine；在那里新建会话（选任务的工作区目录），上线后自动挂单' : '已起会话，会话上线后自动挂单') : (res.message || '启动失败'));
       } catch (err) { flash(`启动失败：${String(err.message || err)}`); }
     } });
   }
@@ -764,8 +771,8 @@ function openSessionMenu(s, x, y) {
   const items = [
     { label: speaking ? '⏹ 停止朗读' : '🔊 朗读最新回复', onClick: () => { closeCtxMenu(); toggleSpeak(s); } },
   ];
-  // 已结束的会话没法回复，不给这一项（点行本身就会 --resume 恢复）
-  if (s.channel || s.pid) {
+  // 已结束的会话没法回复，不给这一项（点行本身就会 --resume 恢复）；trine 模式只认带频道的
+  if (s.channel || (!trineMode && s.pid)) {
     items.push({ label: '↩ 快速回复', onClick: () => { closeCtxMenu(); openComposer(s); } });
   }
   items.push('sep', { label: '⧉ 复制标题', onClick: () => { closeCtxMenu(); copyText(s.title, '标题已复制'); } });
@@ -781,7 +788,7 @@ function openSessionMenu(s, x, y) {
     items.push({ label: '＋ 在此目录起新会话', onClick: () => {
       closeCtxMenu();
       window.api.spawn(spawnDir, mode)
-        .then(() => flash(`已在 ${s.project || '该目录'} 起新会话`))
+        .then((r) => flash(r.trine ? '已打开 trine，请在那里新建会话并选这个目录' : `已在 ${s.project || '该目录'} 起新会话`))
         .catch((e) => flash(`启动失败：${String(e.message || e)}`));
     } });
   }
@@ -1022,7 +1029,7 @@ function todoDetail(t, bound) {
       e.stopPropagation();
       try {
         const res = await window.api.todosSpawn(t.id);
-        flash(res.ok ? '已起会话，会话上线后自动挂单' : (res.message || '启动失败'));
+        flash(res.ok ? (res.trine ? '已打开 trine；在那里新建会话（选任务的工作区目录），上线后自动挂单' : '已起会话，会话上线后自动挂单') : (res.message || '启动失败'));
       } catch (err) { flash(`启动失败：${String(err.message || err)}`); }
     });
     actions.append(go);
@@ -1087,13 +1094,13 @@ $('sess-toggle').addEventListener('click', () => {
 });
 $('todo-tab-open').addEventListener('click', () => { todoStatus = 'open'; renderTodos(); });
 $('todo-tab-done').addEventListener('click', () => { todoStatus = 'done'; renderTodos(); });
-// 会话收放行的 ＋：在当前目录起一个新会话（Claude 形态走 cf，Codex 形态走 codex）
+// 会话收放行的 ＋：在当前目录起一个新会话（Claude 形态走 cf，Codex 形态走 codex；trine 模式打开 trine）
 $('session-new').addEventListener('click', async () => {
   const dir = activeDir();
   if (!dir) return;
   try {
-    await window.api.spawn(dir.path, mode);
-    flash(`已在 ${dir.name} 起新会话`);
+    const r = await window.api.spawn(dir.path, mode);
+    flash(r.trine ? '已打开 trine，请在那里新建会话并选这个目录' : `已在 ${dir.name} 起新会话`);
   } catch (e) {
     flash(`启动失败：${String(e.message || e)}`);
   }

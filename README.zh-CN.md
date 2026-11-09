@@ -139,6 +139,24 @@ settings=C:\path\to\gateway-settings.json
 
 浮窗底部显示一行 `5-hour 64% · 18:24 重置 · weekly 38% · 10/21 重置`（各重置窗口的已用百分比和重置时间，主进程每分钟拉一次 [官方用量接口](https://docs.bigmodel.cn/cn/coding-plan/overview)）。Z.ai 用户加 `"endpoint": "https://api.z.ai"`。没有这个文件就不显示这一行，其他功能不受影响。
 
+### trine 远控（可选）
+
+机器上跑着 [trine](https://github.com/smokecat/trine) 时，浮窗可以把会话交给它的 web 界面，不再走终端。
+
+`~/.claude-float/trine.json`：
+
+```json
+{ "url": "https://你的-trine-relay.example.com", "machineId": "m-xxxxxxxx" }
+```
+
+有这个文件时：
+
+- 点会话行（或宠物托盘卡片）改为在默认浏览器打开 trine web 的对应会话——已结束的也一样（trine 里能看历史、接着聊）
+- ＋ 按钮和任务单的「起会话并接手」改为打开 trine 的新建会话页，不再新开终端；会话冒头后任务照常自动挂单
+- 此模式下浮窗不再往控制台注入打字；快速回复对注册了频道的会话照常可用
+
+machineId 就是 `trine-agent status` 打出来的 `machine=m-…`，打开的浏览器需要是已配对的 trine 设备。没有这个文件 = 终端行为，一切照旧。
+
 ### 扩展
 
 `node ext.js add <扩展目录>` 注册一个扩展（放有 `float-extension.json` 清单的目录）。每个装好的扩展在会话列表下面占一条可收放面板，显示它 `view` 输出的内容——什么语言写都行，只要会「stdin 进一个 JSON、stdout 出一个 JSON」。读取有 15 秒缓存、永远不会执行动作；`prompt.send`（发消息）/ `session.create`（起新会话）类动作要两段确认 + manifest 声明的能力。完整契约：[docs/EXTENSIONS.md](docs/EXTENSIONS.md)；最小示例：`examples/hello-ext/`。
