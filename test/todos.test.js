@@ -84,18 +84,6 @@ assert.strictEqual(todos.sameDir('C:\\WORK\\a', 'c:/work/a/'), true);
 assert.strictEqual(todos.sameDir('C:\\work\\a', 'C:\\work\\b'), false);
 assert.strictEqual(todos.sameDir('', 'C:\\x'), false);
 
-// matchPending：同目录的新面孔命中；老面孔不算；别的目录不算；过期不算；没 pending 不算
-const now = Date.now();
-const pending = { todoId: a.id, ws: 'C:\\work\\a', knownIds: ['old1'], at: now };
-assert.strictEqual(todos.matchPending([
-  { id: 'old1', cwd: 'C:\\work\\a' },
-  { id: 'new1', cwd: 'c:\\work\\a' },
-  { id: 'new2', cwd: 'C:\\work\\b' },
-], pending, now), 'new1');
-assert.strictEqual(todos.matchPending([{ id: 'old1', cwd: 'C:\\work\\a' }], pending, now), null);
-assert.strictEqual(todos.matchPending([{ id: 'new1', cwd: 'C:\\work\\a' }], pending, now + todos.PENDING_TTL + 1), null);
-assert.strictEqual(todos.matchPending([{ id: 'new1', cwd: 'C:\\work\\a' }], null, now), null);
-
 // 写坏一半的文件当空列表，不炸
 const bad = path.join(dir, 'bad.json');
 fs.writeFileSync(bad, '{oops');

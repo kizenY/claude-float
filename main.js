@@ -11,7 +11,6 @@ const edgeTts = require('./edge-tts');
 const reply = require('./reply');
 const focus = require('./focus');
 const petMod = require('./pet');
-const glmUsage = require('./glm-usage');
 const trineLink = require('./trine-link');
 
 // trine 联动：配了 ~/.claude-float/trine.json（url + machineId）就把「点会话行 / 宠物托盘 /
@@ -294,16 +293,6 @@ function snapshot(target, out) {
 
 ipcMain.handle('sessions:list', async (_e, limit, mode) => {
   const res = mode === 'codex' ? codex.attachPids(codex.list(limit)) : sessions.list(limit);
-  // 起会话挂单：等新会话在列表里冒头了就把 id 写进任务（只匹配 claude 会话）
-  if (pendingBind && mode !== 'codex') {
-    const hitId = todos.matchPending(res, pendingBind);
-    if (hitId) {
-      todos.bind(pendingBind.todoId, hitId);
-      pendingBind = null;
-    } else if (Date.now() - pendingBind.at > todos.PENDING_TTL) {
-      pendingBind = null; // 新会话一直没来（起失败/太久），放弃
-    }
-  }
   return res;
 });
 ipcMain.handle('sessions:reply', (_e, file, mode) => {
@@ -478,35 +467,9 @@ ipcMain.handle('session:spawn', (_e, dir, mode) => {
   return { ok: true, name: target.name };
 });
 
-// ---- 任务单：~/.claude-float/todos.json，工作区 = quick-dirs 白名单里的目录 ----
-// 任务的创建/更新/完成/删除都由会话经 MCP 工具操作（channel/server.js）；
-// 浮窗这边只剩只读的 list 和「绑哪个会话/起会话接手」这层 UI 动作。
-// 起会话前先记下「这个目录当前已知的会话 id」，之后冒出来的新会话就是要挂的那条
-let pendingBind = null; // { todoId, ws, knownIds, at }，内存态：浮窗重启丢了就手动补挂
-function armPending(todoId, ws) {
-  const knownIds = sessions.list(200).filter((s) => todos.sameDir(s.cwd, ws)).map((s) => s.id);
-  pendingBind = { todoId, ws, knownIds, at: Date.now() };
-}
-
-ipcMain.handle('todos:list', () => todos.list());
-ipcMain.handle('todos:bind', (_e, { id, sessionId }) => todos.bind(String(id), String(sessionId)));
-ipcMain.handle('todos:unbind', (_e, { id, sessionId }) => todos.unbind(String(id), String(sessionId)));
-ipcMain.handle('todos:spawn', (_e, id) => {
-  const t = todos.list().find((x) => x.id === String(id));
-  if (!t || t.status !== 'open' || !QUICK_DIRS.some((d) => d.path === t.ws)) {
-    return { ok: false, message: '这个任务不在了，或工作区不在启动目录列表里' };
-  }
-  // trine 模式：开 trine 首页让用户在那里建会话（选这个任务的工作区目录）；
-  // 自动挂单照常 arm——trine 起的会话同样写 transcript，冒头就会被挂上
-  if (TRINE) {
-    armPending(t.id, t.ws);
-    openTrine(trineLink.homeUrl(TRINE));
-    return { ok: true, trine: true };
-  }
-  armPending(t.id, t.ws);
-  spawnCfTerminal(t.ws);
-  return { ok: true };
-});
+// ---- 任务单面板已是官方扩展（exts/todos）：浮窗不再自带任务 UI ----
+// todos.json 的读写一直走会话里的 MCP todos_* 工具（channel/server.js）；
+// 「起会话接手/挂会话」在扩展面板里（session.create 效果 + 接手提示让会话自己 todos_bind）。
 
 // ---- 扩展面板：外部进程按固定「视图词汇」吐数据，浮窗只渲染、绝不执行扩展代码 ----
 // 契约见 docs/EXTENSIONS.md。三原则：读取永远无副作用；动作只在用户点击后执行
@@ -585,7 +548,6 @@ ipcMain.handle('shell:openPath', (_e, p) => {
 });
 ipcMain.handle('tts:voices', () => edgeTts.VOICES);
 ipcMain.handle('tts:synthesize', (_e, text, opts) => edgeTts.synthesize(String(text), opts));
-ipcMain.handle('usage:plan', () => glmUsage.usage());
 ipcMain.handle('win:pin', () => {
   const next = !win.isAlwaysOnTop();
   win.setAlwaysOnTop(next, 'screen-saver');

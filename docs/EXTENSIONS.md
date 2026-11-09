@@ -153,9 +153,10 @@ Effect   = { type: 'prompt.insert', text, sessionId }   // 打开快速回复框
 
 ## 后续路线（尚未实现）
 
-- 任务单迁移成第一个官方扩展（todos 面板、会话行「任·」标签走 sessionBadge 贡献点）。
 - 更多贡献点：sessionBadge（会话行徽章）、composerAction（回复框旁的快捷插入）。
 - 会话关联（session-links）与时间线记录。
+
+已落地的官方扩展在 `exts/` 下（`todos` 任务单、`usage` 订阅用量），都带浮窗与 trine 双清单。
 
 ## 最小示例
 

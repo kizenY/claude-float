@@ -36,26 +36,7 @@
     <nav id="dir-rail" class="dir-rail" aria-label="目录"></nav>
     <main id="view" class="view">
     <div id="dir-body" class="dir-body">
-      <!-- 任务区：默认收起一行；展开后不限高，跟会话列表一起滚动，这行冻结置顶随时可收起 -->
-      <!-- 任务是会话经 MCP 工具（todos_*）建和推进的，浮窗只读展示，没有新建/编辑入口 -->
-      <div class="strip-head">
-        <button id="strip-toggle" class="strip-toggle" type="button" title="展开/收起任务">
-          <svg id="strip-caret" class="strip-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span class="strip-title">任务</span>
-          <span id="strip-count" class="strip-count" hidden></span>
-        </button>
-      </div>
-      <div id="strip-body" class="strip-body" hidden>
-        <div class="strip-seg-row">
-          <div class="todo-seg" title="切换看未完成/已完成">
-            <button id="todo-tab-open" type="button" class="on">未完成</button>
-            <button id="todo-tab-done" type="button">已完成</button>
-          </div>
-        </div>
-        <ul id="todo-list" class="todo-list"></ul>
-      </div>
-
-      <!-- 会话区：跟任务区同一套收放行（同样冻结置顶），右侧 ＋ 在这个目录起新会话 -->
+      <!-- 会话区：收放行冻结置顶，右侧 ＋ 在这个目录起新会话；任务单面板已是官方扩展（exts/todos） -->
       <div class="strip-head sess-head">
         <button id="sess-toggle" class="strip-toggle" type="button" title="展开/收起会话">
           <svg id="sess-caret" class="strip-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -91,9 +72,8 @@
     </div>
   </form>
 
-  <!-- 状态栏：用量一眼扫 + 设置藏弹层（低频不常驻） -->
+  <!-- 状态栏：设置藏弹层（低频不常驻）；用量行已是官方扩展（exts/usage） -->
   <footer id="statusbar" class="statusbar">
-    <div id="usage" class="usage" hidden></div>
     <button id="btn-settings" class="icon settings-btn" type="button" title="声音与语速">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>

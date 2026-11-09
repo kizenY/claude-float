@@ -1,4 +1,4 @@
-// 任务单：~/.claude-float/todos.json 的读写 + 起会话后的挂单匹配（纯逻辑，好单测）
+// 任务单：~/.claude-float/todos.json 的读写（纯逻辑，好单测）。浮窗侧 UI 已是官方扩展 exts/todos
 // 任务不只一个标题：desc=内容、goal=目标、progressLog=进度记录（会话推进长任务时逐条追加，
 // 跨会话也不丢）。浮窗只读展示，创建/更新/完成都走会话里的 MCP 工具（channel/server.js）。
 // 工作区不是独立配置，就是 quick-dirs.json 里的 path（白名单校验在 main.js 做）
@@ -7,7 +7,6 @@ const path = require('path');
 const os = require('os');
 
 const FILE = path.join(os.homedir(), '.claude-float', 'todos.json');
-const PENDING_TTL = 5 * 60e3; // 起会话后等新会话冒头的期限，过了就不再自动挂
 const MAX_SESSIONS = 20; // 一张单最多挂的会话数，防无限膨胀
 const MAX_PROGRESS = 50; // 进度记录最多留的条数，超了丢最老的
 
@@ -143,13 +142,4 @@ function unbind(id, sessionId, file = FILE) {
   return t;
 }
 
-// 起会话时先快照该目录已知的会话 id（pending.knownIds），之后每一轮会话列表里
-// 冒出「目录匹配 + id 不在快照里」的新会话就是它。返回 sessionId，没等到/过期返回 null
-function matchPending(list, pending, now = Date.now()) {
-  if (!pending || !pending.ws || !Array.isArray(pending.knownIds)) return null;
-  if (now - pending.at > PENDING_TTL) return null;
-  const hit = (list || []).find((s) => s && s.id && !pending.knownIds.includes(s.id) && sameDir(s.cwd, pending.ws));
-  return hit ? hit.id : null;
-}
-
-module.exports = { FILE, PENDING_TTL, MAX_SESSIONS, MAX_PROGRESS, sameDir, load, list: load, create, update, logProgress, toggle, remove, bind, unbind, matchPending };
+module.exports = { FILE, MAX_SESSIONS, MAX_PROGRESS, sameDir, load, list: load, create, update, logProgress, toggle, remove, bind, unbind };
