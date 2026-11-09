@@ -1,0 +1,12 @@
+{
+  "apiVersion": 1,
+  "id": "todos",
+  "name": "任务单",
+  "version": "0.1.0",
+  "description": "浮窗官方任务单面板：看 ~/.claude-float/todos.json 里的任务与进度，起会话接手",
+  "entry": ["node", "bin/ext.js"],
+  "contributes": {
+    "panel": { "title": "任务单" }
+  },
+  "capabilities": ["session.create"]
+}

@@ -1,0 +1,12 @@
+{
+  "apiVersion": 1,
+  "id": "usage",
+  "name": "订阅用量",
+  "version": "0.1.0",
+  "description": "浮窗官方用量面板：GLM Coding Plan 各窗口（5 小时 / 周）的已用百分比与重置时间",
+  "entry": ["node", "bin/ext.js"],
+  "contributes": {
+    "panel": { "title": "用量" }
+  },
+  "capabilities": []
+}

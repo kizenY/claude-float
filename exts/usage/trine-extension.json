@@ -1,0 +1,13 @@
+{
+  "apiVersion": 1,
+  "id": "usage",
+  "name": "订阅用量",
+  "version": "0.1.0",
+  "description": "在 trine 里看 GLM Coding Plan 各窗口（5 小时 / 周）的用量与重置时间",
+  "entry": ["node", "bin/ext.js"],
+  "contributes": {
+    "sessionPanel": { "title": "用量", "icon": "gauge" },
+    "workspacePanel": { "title": "用量" }
+  },
+  "capabilities": []
+}

@@ -1,0 +1,16 @@
+{
+  "apiVersion": 1,
+  "id": "todos",
+  "name": "任务单",
+  "version": "0.1.0",
+  "description": "在 trine 里看任务单、接手任务、从任务开始新会话；与 claude-float 共用同一份 todos.json",
+  "entry": ["node", "bin/ext.js"],
+  "contributes": {
+    "sessionPanel": { "title": "任务单", "icon": "list-checks" },
+    "sessionBadge": true,
+    "workspacePanel": { "title": "任务单" },
+    "linkPicker": { "title": "关联任务", "multiple": true },
+    "newSession": { "title": "从任务开始" }
+  },
+  "capabilities": ["prompt.insert", "session.create", "invoke"]
+}
