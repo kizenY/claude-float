@@ -141,22 +141,25 @@ settings=C:\path\to\gateway-settings.json
 
 ### trine 远控（可选）
 
-机器上跑着 [trine](https://github.com/smokecat/trine) 时，浮窗可以把会话交给它的 web 界面，不再走终端。
+机器上跑着 [trine](https://github.com/smokecat/trine) 时，浮窗可以和它绑成一套服务：会话、任务单、用量都在 trine 的 web 界面里看（手机也行），浮窗退成本地那半——桌面宠物 + 托盘。
 
 `~/.claude-float/trine.json`：
 
 ```json
-{ "url": "https://你的-trine-relay.example.com", "machineId": "m-xxxxxxxx" }
+{ "url": "https://你的-trine-relay.example.com" }
 ```
+
+`machineId` 可以省略：本机装过 trine（有 `~/.trine/identity.json`）就自动读；手动写的话用 `trine-agent status` 打出来的 `machine=m-…`。
 
 有这个文件时：
 
-- 点会话行（或宠物托盘卡片）**唤起已安装的 trine 应用**：开始菜单里找得到 `trine*.lnk` 就用它（已在跑 = 聚焦那一个窗口，没跑 = 启动到首页；`"app": "路径"` 显式指定，`"app": false` 禁用）
-- 没装应用时退回浮窗自带的 **trine 窗口**——所有点击共用这一个窗口（已开就导航过去，不新开页签），已结束的会话也一样（trine 里能看历史、接着聊）；`"open": "window"` 强制走这条路
-- ＋ 按钮和任务单的「起会话并接手」改为打开 trine 的新建会话页，不再新开终端；会话冒头后任务照常自动挂单
+- **主窗口不再常驻**：点宠物 = 打开 trine 首页；托盘菜单「打开设置窗口」才出主窗口
+- 点宠物托盘里的会话卡片 **唤起已安装的 trine 应用**直达那个会话：开始菜单里找 `trine*.lnk`（已在跑 = 聚焦并跳转，没跑 = 启动；`"app": "路径"` 显式指定，`"app": false` 禁用），没装则退回浏览器页签或浮窗自带的 trine 窗口（`"open": "browser"` / `"open": "window"` 强制指定）
+- ＋ 按钮和任务面板里的「起会话」改为打开 trine 的新建会话页，不再新开终端
 - 此模式下浮窗不再往控制台注入打字；快速回复对注册了频道的会话照常可用
+- 官方扩展 `exts/todos`、`exts/usage` 是双清单设计（浮窗/trine 各一份 manifest），`trine-agent ext add exts/todos` 装进 trine 后，任务单和用量在手机/网页上也能看、能操作
 
-trine 窗口是一台独立设备（密钥随浮窗持久保存，重启不丢），所以第一次打开要配对一次：真终端跑 `trine-agent pair`，比对两端校验码。更喜欢浏览器页签的话，trine.json 里加 `"open": "browser"`。machineId 就是 `trine-agent status` 打出来的 `machine=m-…`。没有这个文件 = 终端行为，一切照旧。
+内置 trine 窗口是一台独立设备（密钥随浮窗持久保存，重启不丢），第一次打开要配对一次：真终端跑 `trine-agent pair`，比对两端校验码。没有这个文件 = 终端行为，一切照旧。
 
 ### 扩展
 

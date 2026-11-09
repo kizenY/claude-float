@@ -141,22 +141,25 @@ One line at the widget's bottom shows `5-hour 64% · 18:24 reset · weekly 38% �
 
 ### trine remote (optional)
 
-With [trine](https://github.com/smokecat/trine) running on this machine, the widget can hand sessions over to its web UI instead of the terminal.
+With [trine](https://github.com/smokecat/trine) running on this machine, the widget can bind with it into one service: sessions, task tickets and usage all live in trine's web UI (phone included), while the widget shrinks to its local half — the desktop pet and the tray.
 
 `~/.claude-float/trine.json`:
 
 ```json
-{ "url": "https://your-trine-relay.example.com", "machineId": "m-xxxxxxxx" }
+{ "url": "https://your-trine-relay.example.com" }
 ```
+
+`machineId` is optional: it is auto-read from trine's own `~/.trine/identity.json` when present; to pin it manually use what `trine-agent status` prints (`machine=m-…`).
 
 With this file present:
 
-- Clicking a session row (or a pet-tray card) raises the installed trine app when there is one (looked up as a `trine*.lnk` in the Start Menu; `"app": "C:\path	rine.lnk"` to pin it, `"app": false` to disable) — focus if running, launch otherwise, no browser tabs involved
-- Without an installed app it falls back to a dedicated trine window built into the widget — one window for everything: already open means navigate, not another tab. Ended sessions open there too (trine shows the history and can resume it). `"open": "window"` forces this even when the app is installed
-- The ＋ buttons and the task ticket's "start a session & take over" action open trine's new-session sheet instead of spawning a terminal; the ticket still auto-binds the session once it shows up
+- The main window no longer stays around: clicking the pet opens trine's home; the window only comes back via the tray menu's "open settings window"
+- Clicking a pet-tray card raises the installed trine app and lands on that session (looked up as a `trine*.lnk` in the Start Menu — focus & navigate if running, launch otherwise; `"app": "C:\path\to\trine.lnk"` to pin it, `"app": false` to disable). Without an installed app it falls back to browser tabs or the widget's built-in trine window (`"open": "browser"` / `"open": "window"` to force one)
+- The ＋ buttons and the task panel's "start a session" action open trine's new-session sheet instead of spawning a terminal
 - The widget stops injecting keystrokes into consoles while this is on; quick reply keeps working for sessions that registered a channel
+- The official extensions `exts/todos` and `exts/usage` carry dual manifests (one dir serves both hosts): `trine-agent ext add exts/todos` puts the task tickets and usage on trine's web UI too
 
-The trine window is its own device identity (keys persist across restarts), so the first open needs one pairing: run `trine-agent pair` in a terminal and compare the short code. Add `"open": "browser"` to trine.json if you'd rather use normal browser tabs. The machine id is what `trine-agent status` prints (`machine=m-…`). No file → terminal behavior, nothing changes.
+The built-in trine window is its own device identity (keys persist across restarts), so the first open needs one pairing: run `trine-agent pair` in a terminal and compare the short code. No file → terminal behavior, nothing changes.
 
 ### Extensions
 

@@ -45,14 +45,28 @@ ok('detectAppShortcut：扫到 trine.lnk（大小写不敏感、含子目录）�
   assert.strictEqual(detectAppShortcut(base), path.join(sub, 'trine.app.lnk'));
 });
 
+ok('machineId 缺省时从 ~/.trine/identity.json 兜底读', () => {
+  const idDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cf-trine-id-'));
+  const identity = path.join(idDir, 'identity.json');
+  fs.writeFileSync(identity, JSON.stringify({ v: 1, machineId: 'm-from-trine' }));
+  const cfg = loadConfig(tmpConfig({ url: 'https://a.com' }), identity);
+  assert.strictEqual(cfg.machineId, 'm-from-trine');
+  // 身份文件没有/坏了：machineId 就地留空 → 整个配置无效
+  assert.strictEqual(loadConfig(tmpConfig({ url: 'https://a.com' }), path.join(idDir, 'none.json')), null);
+  // 显式写的 machineId 优先于身份文件
+  assert.strictEqual(loadConfig(tmpConfig({ url: 'https://a.com', machineId: 'm-mine' }), identity).machineId, 'm-mine');
+  fs.rmSync(idDir, { recursive: true, force: true });
+});
+
 ok('没有配置文件 → null（未开启 trine 模式）', () => {
   assert.strictEqual(loadConfig(tmpConfig(undefined)), null);
 });
 
-ok('坏 JSON / 缺字段 / 非 http(s) scheme → null', () => {
-  assert.strictEqual(loadConfig(tmpConfig('{oops')), null);
-  assert.strictEqual(loadConfig(tmpConfig({ url: 'https://a.com' })), null);
-  assert.strictEqual(loadConfig(tmpConfig({ machineId: 'm-x' })), null);
+ok('坏 JSON / 缺字段 / 非 http(s) scheme → null（身份文件也找不到时）', () => {
+  const noIdentity = path.join(os.tmpdir(), 'cf-trine-none', 'identity.json'); // 保证不存在
+  assert.strictEqual(loadConfig(tmpConfig('{oops'), noIdentity), null);
+  assert.strictEqual(loadConfig(tmpConfig({ url: 'https://a.com' }), noIdentity), null);
+  assert.strictEqual(loadConfig(tmpConfig({ machineId: 'm-x' }), noIdentity), null);
   assert.strictEqual(loadConfig(tmpConfig({ url: 'file:///etc', machineId: 'm-x' })), null);
   assert.strictEqual(loadConfig(tmpConfig({ url: 'javascript:alert(1)', machineId: 'm-x' })), null);
 });

@@ -102,7 +102,9 @@ function createWindow() {
   // 打开快速回复输入框时经 win:focusable 临时恢复可聚焦（不然打不了字）。
   win.setFocusable(false);
   win.loadFile('index.html');
-  win.once('ready-to-show', () => { win.showInactive(); refreshTray(); });
+  // trine 模式：主窗口不再常驻——会话、任务、用量都在 trine 里看，浮窗退成
+  // 「宠物 + 托盘」，窗口只在托盘菜单点「打开设置」时才出来
+  win.once('ready-to-show', () => { if (!TRINE) win.showInactive(); refreshTray(); });
   win.on('moved', saveBounds);
   win.on('resized', saveBounds);
   win.on('show', refreshTray);
@@ -247,7 +249,7 @@ function refreshTray() {
     { type: 'separator' },
   ] : [];
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: win.isVisible() ? '隐藏浮窗' : '显示浮窗', click: toggleWindow },
+    { label: win.isVisible() ? (TRINE ? '隐藏设置窗口' : '隐藏浮窗') : (TRINE ? '打开设置窗口' : '显示浮窗'), click: toggleWindow },
     ...gwItems,
     ...petItems,
     { type: 'separator' },
@@ -772,8 +774,11 @@ ipcMain.handle('pet:dismiss', (_e, key) => {
   return true;
 });
 ipcMain.handle('pet:hide', () => setPetEnabled(false));
-// 点宠物本体 = 切换浮窗显隐（和托盘图标单击同款）
-ipcMain.handle('pet:toggle-main', () => toggleWindow());
+// 点宠物本体 = 切换浮窗显隐（和托盘图标单击同款）；trine 模式下 = 打开 trine 首页
+ipcMain.handle('pet:toggle-main', () => {
+  if (TRINE) { openTrine(trineLink.homeUrl(TRINE)); return; }
+  toggleWindow();
+});
 
 // 调试截图（CLAUDE_FLOAT_SNAPSHOT / CLAUDE_FLOAT_PET_SNAPSHOT）时豁免单实例锁：正主浮窗在跑也能起第二个实例出图，
 // 截完自动退出；channel server 是随机端口，不会撞

@@ -6,11 +6,13 @@ const path = require('path');
 const os = require('os');
 
 const FILE = path.join(os.homedir(), '.claude-float', 'trine.json');
+// trine agent 的身份文件：machineId 没写在 trine.json 里时从这里兜底读（装了 trine 的机器少填一个字段）
+const TRINE_IDENTITY = path.join(os.homedir(), '.trine', 'identity.json');
 
 /** 会话 id 进 URL 前的收紧：只认字母数字连字符下划线，防拼出奇怪的 URL */
 const SAFE_ID = /^[\w-]{1,128}$/;
 
-function loadConfig(file = FILE) {
+function loadConfig(file = FILE, identityFile = TRINE_IDENTITY) {
   let raw;
   try {
     raw = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -18,7 +20,12 @@ function loadConfig(file = FILE) {
     return null; // 没配置 / 文件坏了都当「未开启」
   }
   const url = typeof raw.url === 'string' ? raw.url.trim().replace(/\/+$/, '') : '';
-  const machineId = typeof raw.machineId === 'string' ? raw.machineId.trim() : '';
+  let machineId = typeof raw.machineId === 'string' ? raw.machineId.trim() : '';
+  if (!machineId && identityFile) {
+    try {
+      machineId = String(JSON.parse(fs.readFileSync(identityFile, 'utf8')).machineId || '').trim();
+    } catch { /* 没有 trine 身份文件：machineId 就地留空 */ }
+  }
   // 只放行 http(s)，拒绝别的 scheme；machineId 同样只认安全字符
   if (!/^https?:\/\/[\w.-]+(:\d+)?(\/[\w./-]*)?$/.test(url)) return null;
   if (!SAFE_ID.test(machineId)) return null;
