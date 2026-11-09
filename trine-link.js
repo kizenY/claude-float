@@ -22,7 +22,9 @@ function loadConfig(file = FILE) {
   // 只放行 http(s)，拒绝别的 scheme；machineId 同样只认安全字符
   if (!/^https?:\/\/[\w.-]+(:\d+)?(\/[\w./-]*)?$/.test(url)) return null;
   if (!SAFE_ID.test(machineId)) return null;
-  return { url, machineId };
+  // open：window = 浮窗内建 trine 窗口（默认）；browser = 系统浏览器开页签
+  const open = raw.open === 'browser' ? 'browser' : 'window';
+  return { url, machineId, open };
 }
 
 /** trine web 的会话深链：/s/<machineId>/<sessionId> */

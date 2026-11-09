@@ -151,11 +151,11 @@ With [trine](https://github.com/smokecat/trine) running on this machine, the wid
 
 With this file present:
 
-- Clicking a session row (or a pet-tray card) opens that session in trine web in your default browser — ended sessions too (trine shows the history and can resume it there)
+- Clicking a session row (or a pet-tray card) opens that session in a dedicated trine window built into the widget — one window for everything: already open means navigate, not another tab. Ended sessions open there too (trine shows the history and can resume it)
 - The ＋ buttons and the task ticket's "start a session & take over" action open trine's new-session sheet instead of spawning a terminal; the ticket still auto-binds the session once it shows up
 - The widget stops injecting keystrokes into consoles while this is on; quick reply keeps working for sessions that registered a channel
 
-The machine id is what `trine-agent status` prints (`machine=m-…`), and the browser that opens must be a paired trine device. No file → terminal behavior, nothing changes.
+The trine window is its own device identity (keys persist across restarts), so the first open needs one pairing: run `trine-agent pair` in a terminal and compare the short code. Add `"open": "browser"` to trine.json if you'd rather use normal browser tabs. The machine id is what `trine-agent status` prints (`machine=m-…`). No file → terminal behavior, nothing changes.
 
 ### Extensions
 

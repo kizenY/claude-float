@@ -132,6 +132,43 @@ function toggleWindow() {
   else { win.show(); win.focus(); }
 }
 
+// ---- trine 内建窗口：浮窗自己的 trine web 容器（默认走它，open:"browser" 才丢给系统浏览器） ----
+// 独立持久分区（persist:trine），配对一次后重启浮窗身份还在。点会话 = 已开就导航、没开就建，
+// 永远只有一个窗口，不碰浏览器页签（也就不受浏览器插件、默认浏览器、PWA 链接路由的影响）。
+// 它是一台独立设备：第一次打开要配对一次（真终端跑 trine-agent pair 比对校验码）
+let trineWin = null;
+function openTrine(url) {
+  if (TRINE && TRINE.open === 'browser') {
+    shell.openExternal(url);
+    return;
+  }
+  if (!trineWin || trineWin.isDestroyed()) {
+    const { workArea } = screen.getPrimaryDisplay();
+    const width = 480, height = 800;
+    trineWin = new BrowserWindow({
+      width, height,
+      x: workArea.x + Math.max(8, workArea.width - width - 360), // 默认贴右上，避开右下的浮窗和宠物
+      y: workArea.y + 48,
+      minWidth: 360, minHeight: 480,
+      show: false,
+      title: 'trine',
+      webPreferences: {
+        partition: 'persist:claude-float-trine', // 持久分区：设备密钥/登录态随浮窗 userData 存
+        contextIsolation: true, nodeIntegration: false, sandbox: true,
+      },
+    });
+    trineWin.loadURL(url);
+    trineWin.once('ready-to-show', () => trineWin.show());
+    trineWin.on('closed', () => { trineWin = null; });
+    // 站内要开新窗口的链接（如外部 console）丢给系统浏览器，别在容器里再开窗口
+    trineWin.webContents.setWindowOpenHandler(({ url: u }) => { shell.openExternal(u); return { action: 'deny' }; });
+  } else {
+    trineWin.loadURL(url); // 整页导航到深链，React Router 接管；已在这个地址就当刷新
+    trineWin.show();
+    trineWin.focus();
+  }
+}
+
 // ---- jev 网关开关：控制 cf 新起的会话走不走本地分流网关 ----
 // 网关健康检查地址和 --settings 配置文件都在 ~/.claude-float/gateway.conf（cf.cmd 读同一个文件）；
 // 开关落地为 ~/.claude-float/gateway-off（存在=关），cmd 一行 if exist 就能识别。
@@ -303,7 +340,7 @@ ipcMain.handle('session:focus', async (_e, id, mode) => {
   if (TRINE) {
     const url = trineLink.sessionUrl(TRINE, id);
     if (url) {
-      await shell.openExternal(url);
+      openTrine(url);
       return { ok: true, trine: true };
     }
   }
@@ -403,7 +440,7 @@ ipcMain.handle('session:spawn', (_e, dir, mode) => {
   if (!target) throw new Error('bad dir');
   // trine 模式：开 trine 首页（新建会话的 sheet 在那里选目录，不支持 URL 预选）
   if (TRINE) {
-    shell.openExternal(trineLink.homeUrl(TRINE));
+    openTrine(trineLink.homeUrl(TRINE));
     return { ok: true, trine: true, name: target.name };
   }
   if (mode === 'codex') spawnCodexTerminal(target.path);
@@ -433,7 +470,7 @@ ipcMain.handle('todos:spawn', (_e, id) => {
   // 自动挂单照常 arm——trine 起的会话同样写 transcript，冒头就会被挂上
   if (TRINE) {
     armPending(t.id, t.ws);
-    shell.openExternal(trineLink.homeUrl(TRINE));
+    openTrine(trineLink.homeUrl(TRINE));
     return { ok: true, trine: true };
   }
   armPending(t.id, t.ws);

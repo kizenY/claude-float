@@ -19,9 +19,10 @@ function ok(name, fn) {
   console.log(`  ✓ ${name}`);
 }
 
-ok('合法配置：url 去尾斜杠，machineId 保留', () => {
+ok('合法配置：url 去尾斜杠，machineId 保留，open 默认 window', () => {
   const cfg = loadConfig(tmpConfig({ url: 'https://trine.example.com:8443/', machineId: 'm-abc123' }));
-  assert.deepStrictEqual(cfg, { url: 'https://trine.example.com:8443', machineId: 'm-abc123' });
+  assert.deepStrictEqual(cfg, { url: 'https://trine.example.com:8443', machineId: 'm-abc123', open: 'window' });
+  assert.strictEqual(loadConfig(tmpConfig({ url: 'https://a.com', machineId: 'm-x', open: 'browser' })).open, 'browser');
 });
 
 ok('没有配置文件 → null（未开启 trine 模式）', () => {
