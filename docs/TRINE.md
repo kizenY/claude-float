@@ -6,6 +6,17 @@ same sessions. The widget keeps the desktop half (pet, tray, quick reply); trine
 owns the remote half (web/PWA, session list, task tickets, usage), and both share
 the same data files.
 
+## Two ways to install
+
+1. **Widget only** — you want the floating panel, read-aloud and quick reply on
+   one Windows machine. Follow "Quick start" in [README.md](../README.md); you
+   never need trine, a server or a domain.
+2. **The whole stack** — you also want the same sessions on your phone, task
+   tickets and usage in a browser, with the widget reduced to the pet + tray.
+   Follow this page top to bottom: relay → Windows agent → widget → extensions →
+   binding. Budget ~30 minutes if you already have a domain pointed at a Linux
+   VPS; the relay is the only part that needs a server.
+
 If you are an agent asked to "install this whole set", follow the checklist at the
 end in order. Everything here is Windows-agent + Linux-relay; upstream trine does
 not validate Windows, this fork is the one that is actually run there daily.
@@ -42,9 +53,19 @@ The `web-push` branch adds the Windows-side work used here:
 
 ## 1. Relay
 
-Use the fork so the relay and the agent are the same revision:
+The relay is a small Bun service; it only accepts outbound connections from your
+machines. It needs a Linux host (a cheap VPS is fine), a domain, Caddy and a Bun
+binary at `/usr/local/bin/bun`.
+
+Create the service account and release directory first (this is step 1 of the
+upstream deploy guide), then clone the fork so the relay and the agent run the
+same revision:
 
 ```bash
+sudo useradd --system --home-dir /var/lib/trine --shell /usr/sbin/nologin trine
+sudo install -d -m 750 -o trine -g trine /var/lib/trine /opt/trine-releases
+sudo install -d -m 750 -o root -g trine /etc/trine
+
 sudo -u trine git clone -b web-push https://github.com/kizenY/trine.git /opt/trine-releases/initial
 cd /opt/trine-releases/initial
 sudo -u trine -H /usr/local/bin/bun install --frozen-lockfile
@@ -92,12 +113,17 @@ notepad start-agent.vbs
 ```
 
 Register a one-shot logon task (this is what the sample's comments call
-`TrineAgent`):
+`TrineAgent`). Run this from an **elevated** Command Prompt — `/rl highest` needs
+it:
 
 ```bat
 schtasks /create /tn TrineAgent /tr "wscript.exe C:\path\to\trine\start-agent.vbs" /sc onlogon /rl highest
 schtasks /run /tn TrineAgent
 ```
+
+If the checkout path contains spaces, create the task in Task Scheduler instead
+(wscript.exe as the program, the quoted `.vbs` path as its argument); `schtasks`
+mangles nested quotes.
 
 Because the task is a one-shot launcher, not a supervisor, trine's in-app
 "restart agent" is unavailable (`machine.info.restart.available=false`). After
@@ -212,6 +238,19 @@ Nothing to configure. The agent reads `~/.claude/settings.json`'s `env` block
 `ANTHROPIC_DEFAULT_HAIKU_MODEL`) and asks that endpoint for a short title after
 the first turn. Titles live in `~/.trine/sessions.json`, never in the transcript;
 a user `/rename` still wins. If the call fails, the first prompt is shown.
+
+## Daily use
+
+- Start the widget with `npm start` in the claude-float checkout; the tray menu
+  has "run at login" if you want it every day
+- Start sessions with `cf` instead of `claude` when you want quick reply (put
+  `cf.cmd` on `PATH`); both launch the same CLI
+- On the phone, open `https://<your-domain>`, pair once and "add to home screen";
+  the PWA shows the same sessions, task tickets and usage
+- Longer tasks: tell the session "建个任务：…，目标是…" (or it calls `todos_add`);
+  the ticket shows up in the widget panel and in trine within 15 seconds
+- After updating the trine checkout, double-click `restart-agent.cmd`; after
+  updating claude-float, restart the widget
 
 ## Verify
 
