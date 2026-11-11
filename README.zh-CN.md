@@ -145,6 +145,8 @@ settings=C:\path\to\gateway-settings.json
 
 机器上跑着 [trine](https://github.com/smokecat/trine) 时，浮窗可以和它绑成一套服务：会话、任务单、用量都在 trine 的 web 界面里看（手机也行），浮窗退成本地那半——桌面宠物 + 托盘。
 
+从头装这一整套（中继、Windows agent、两边的扩展、再把浮窗绑上去）的完整步骤见 **[docs/TRINE.md](docs/TRINE.md)**。文档指向维护中的 fork（`kizenY/trine` 的 `web-push` 分支），下面这套行为依赖它的额外提交：SDK 会话的标题、按本地价目表算 `deepseek-*` / `glm-*` 成本（不再按 Anthropic 价高估数倍）、美元/人民币切换，以及 Windows 的启动/重启脚本。
+
 `~/.claude-float/trine.json`：
 
 ```json

@@ -145,6 +145,8 @@ The panel shows the used percentage and reset time per window (e.g. `5-hour 64% 
 
 With [trine](https://github.com/smokecat/trine) running on this machine, the widget can bind with it into one service: sessions, task tickets and usage all live in trine's web UI (phone included), while the widget shrinks to its local half — the desktop pet and the tray.
 
+Installing both halves from scratch — relay, Windows agent, both extension hosts and the binding — is documented step by step in **[docs/TRINE.md](docs/TRINE.md)**. That guide also points at the maintained fork (`kizenY/trine`, branch `web-push`), whose extra commits are what the setup below assumes: session titles for SDK sessions, a local price table so `deepseek-*` / `glm-*` costs are not billed at Anthropic rates, a USD/CNY toggle, and Windows launcher/restart scripts.
+
 `~/.claude-float/trine.json`:
 
 ```json
