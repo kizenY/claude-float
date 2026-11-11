@@ -53,7 +53,7 @@ function buildView(data, stale) {
     };
   });
   return {
-    title: data.level ? `订阅用量 · ${data.level}` : '订阅用量',
+    title: data.level ? `GLM订阅用量 · ${data.level}` : 'GLM订阅用量',
     sections: [{ id: 'windows', items }],
   };
 }
